@@ -1,6 +1,6 @@
 import {
   createSystem, Group, Vector3, Mesh, SphereGeometry, MeshBasicMaterial, TorusGeometry, Points, BufferGeometry,
-  BufferAttribute, PointsMaterial, AdditiveBlending, Color, HemisphereLight, DirectionalLight, Fog,
+  BufferAttribute, PointsMaterial, AdditiveBlending, Color, CanvasTexture, HemisphereLight, DirectionalLight, Fog,
 } from '@iwsdk/core';
 import { makePuzzle, ROPE_RADIUS } from './puzzle.js';
 import { LEVELS, dailySpec, KNOTS } from './braid.js';
@@ -52,7 +52,8 @@ export class GameSystem extends createSystem({}) {
     // solve burst
     const N = 420; this.burstVel = new Float32Array(N * 3);
     const bg = new BufferGeometry(); bg.setAttribute('position', new BufferAttribute(new Float32Array(N * 3), 3));
-    this.burst = new Points(bg, new PointsMaterial({ color: 0xffe08a, size: 0.006, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
+    const dot = document.createElement('canvas'); dot.width = dot.height = 32; { const g = dot.getContext('2d'), r = g.createRadialGradient(16, 16, 0, 16, 16, 16); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 32, 32); }
+    this.burst = new Points(bg, new PointsMaterial({ map: new CanvasTexture(dot), color: 0xffe08a, size: 0.004, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
     this.burst.frustumCulled = false; this.stage.add(this.burst);
 
     this.showMenu();
@@ -273,6 +274,8 @@ export class GameSystem extends createSystem({}) {
     } else if (this.state === 'play') {
       this.handleGrabs();
       rope.step(dt);
+      // a gentle spring keeps a released rope in front of the player
+      if (!rope.grabs.size) { const c = rope.centroid(), k = Math.min(1, dt * 0.8); rope.translate(c.map(v => -v * k)); }
       if (this.started) this.elapsed += dt;
       const { best } = this.tracker.update(rope.p, rope.n, 2);
       if (best < this.bestSeen) { if (Number.isFinite(this.bestSeen) && this.started) this.sound.progress(true); this.bestSeen = best; }
