@@ -79,7 +79,7 @@ const { chromium } = require('playwright');
   const solved = await page.evaluate(async () => {
     const k = window.knotwork; await window.T.pinch('right', 0); await window.T.pinch('left', 0);
     for (let i = 0; i < 3; i++) await window.T.raf();
-    if (k.target === 0) {
+    if (k.trueCrossings === 0) {
       const n = k.rope.n, R = k.rope.rest * n / (2 * Math.PI);
       for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; k.rope.p.set([R * Math.cos(a), 0.003 * Math.sin(3 * a), R * Math.sin(a)], i * 3); }
       k.rope.prev.set(k.rope.p);

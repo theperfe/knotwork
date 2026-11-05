@@ -10,7 +10,7 @@ export const CRUMPLE = { steps: 50, pressure: -0.12 };
 // Try successive warp seeds until the loop really looks tangled from every angle.
 export function makePuzzle(spec, opts = {}) {
   const target = KNOTS[spec.knot || 'unknot'].crossings;
-  const want = spec.minCrossings ?? Math.max(2, spec.strands + spec.conj) + target * 2;
+  const want = spec.minCrossings ?? Math.max(4, spec.strands + spec.conj) + target * 2;
   let best = null;
   for (let k = 0; k < 8; k++) {
     const r = makeOne({ ...spec, seed: (spec.seed ?? 1) + k * 7919 }, opts);

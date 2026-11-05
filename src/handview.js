@@ -13,7 +13,7 @@ const _m = new Matrix4(), _a = new Vector3(), _b = new Vector3(), _d = new Vecto
 
 export class HandView {
   constructor(scene) {
-    const mat = new MeshStandardMaterial({ color: 0xbfd8ff, emissive: 0x2a4a7a, emissiveIntensity: 0.6, roughness: 0.5, transparent: true, opacity: 0.55, depthWrite: false });
+    const mat = new MeshStandardMaterial({ color: 0xbfd8ff, emissive: 0x2a4a7a, emissiveIntensity: 0.6, roughness: 0.5, transparent: true, opacity: 0.42, depthWrite: false });
     this.joints = new InstancedMesh(new SphereGeometry(1, 10, 8), mat, 50);
     this.bones = new InstancedMesh(new CylinderGeometry(1, 1, 1, 8, 1, true), mat, BONES.length * 2);
     for (const m of [this.joints, this.bones]) { m.frustumCulled = false; m.count = 0; m.renderOrder = 5; scene.add(m); }

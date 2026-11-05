@@ -85,7 +85,7 @@ export class GameSystem extends createSystem({}) {
   startPuzzle(spec, { preview = false } = {}) {
     this.spec = spec;
     const { rope, crossings: c0, frames, target } = makePuzzle(spec, { record: true });
-    this.rope = rope; this.c0 = Math.max(1, c0); this.target = target ? target + 1 : 0; this.trueCrossings = target; this.knot = KNOTS[spec.knot || 'unknot']; this.tieFrames = frames; this.finalP = rope.p.slice();
+    this.rope = rope; this.c0 = Math.max(1, c0); this.target = target ? target + 1 : 1; /* a 1-crossing diagram is always an unknot */ this.trueCrossings = target; this.knot = KNOTS[spec.knot || 'unknot']; this.tieFrames = frames; this.finalP = rope.p.slice();
     if (this.view) this.view.dispose();
     this.view = new KnotView(this.stage, rope.n, rope.r);
     this.view.mesh.position.set(0, 0, 0);
@@ -101,7 +101,7 @@ export class GameSystem extends createSystem({}) {
 
   finishTying() {
     const rope = this.rope;
-    rope.pressure = 0.02; rope.noise = 0; rope.prev.set(rope.p);
+    rope.pressure = 0.06; rope.noise = 0; rope.prev.set(rope.p);
     this.state = this.preview ? 'menu' : 'play';
     this.showHud();
   }
@@ -120,7 +120,7 @@ export class GameSystem extends createSystem({}) {
     const dirSign = area >= 0 ? 1 : -1, th0 = Math.atan2(uv[0][1], uv[0][0]);
     const R = (rope.rest * n) / (Math.PI * 2);
     this.from = rope.p.slice(); this.to = new Float32Array(n * 3);
-    this.morph = this.target === 0;
+    this.morph = this.trueCrossings === 0;
     for (let i = 0; i < n; i++) {
       const th = th0 + dirSign * (i / n) * Math.PI * 2;
       _v.set(...c).addScaledVector(e1, R * Math.cos(th)).addScaledVector(e2, R * Math.sin(th));
@@ -156,7 +156,7 @@ export class GameSystem extends createSystem({}) {
       ctx.fillStyle = '#fff'; ctx.font = '700 46px system-ui, Arial'; ctx.textAlign = 'right';
       ctx.fillText(fmt(this.elapsed), W - 34, 62); ctx.textAlign = 'left';
       ctx.font = '500 24px system-ui, Arial'; ctx.fillStyle = 'rgba(255,255,255,0.75)';
-      const msg = st === 'tying' ? 'Tying your knot…' : st === 'solved' ? 'Free!' : !this.started ? (s.index === 0 && !s.daily ? 'Pinch the rope and pull it loose' : 'Pinch and pull. Strands are solid.') : this.target ? `Crossings: ${left} · a real knot hides inside` : `Crossings left: ${left}`;
+      const msg = st === 'tying' ? 'Tying your knot…' : st === 'solved' ? 'Free!' : !this.started ? (s.index === 0 && !s.daily ? 'Pinch the rope and pull it loose' : 'Pinch and pull. Strands are solid.') : this.trueCrossings ? `Crossings: ${left} · a real knot hides inside` : `Crossings left: ${left}`;
       fitText(ctx, msg, 34, 100, W - 68, 24, 500);
       // progress bar
       const bx = 34, by = 106, bw = W - 68, bh = 0;
@@ -253,7 +253,9 @@ export class GameSystem extends createSystem({}) {
     const xrNow = !!this.world.session;
     if (xrNow !== this.wasXR) { this.wasXR = xrNow; this.placed = false; if (xrNow) this.sound.start(); }
     if (!this.placed) this.place();
+    const edges = window.KNOTWORK_CLOCK ? [...this.pointers.list.values()].map(p => [p, p.pressed, p.released]) : [];
     this.pointers.update(this.xrFrame);
+    for (const [p, a, b] of edges) { p.pressed = p.pressed || a; p.released = p.released || b; }
     if (!this.pointers.xr) this.updateDesktopCamera();
     this.ui.update(dt, this.pointers, () => this.sound.click());
     this.handView.update(this.pointers.xr ? this.pointers.hands() : []);
@@ -304,6 +306,8 @@ export class GameSystem extends createSystem({}) {
     this.t = (this.t || 0) + dt;
     this.view.update(rope.p, { tangle, contact: rope.contact, held: this.held, solvedK: this.state === 'solved' ? Math.min(1, this.solvedT * 1.5) * 0.6 : 0, pulse: this.t });
     this.view.visible = !(this.state === 'menu' && this.page !== 'main');
+    // edges have been consumed by this update
+    if (window.KNOTWORK_CLOCK) for (const p of this.pointers.list.values()) p.pressed = p.released = false;
     const showMenuKnot = this.state === 'menu';
     if (showMenuKnot) { this.view.mesh.position.set(0, 0.2, -0.12); this.view.glow.position.copy(this.view.mesh.position); }
     else { this.view.mesh.position.set(0, 0, 0); this.view.glow.position.set(0, 0, 0); }
@@ -311,7 +315,10 @@ export class GameSystem extends createSystem({}) {
 
   renderOnly() {
     // keep hands and UI hover drawn while the virtual clock is paused
+    // keep press/release edges for the next real update
+    const edges = [...this.pointers.list.values()].map(p => [p, p.pressed, p.released]);
     this.pointers.update(this.xrFrame);
+    for (const [p, a, b] of edges) { p.pressed = p.pressed || a; p.released = p.released || b; }
     this.handView.update(this.pointers.xr ? this.pointers.hands() : []);
   }
 

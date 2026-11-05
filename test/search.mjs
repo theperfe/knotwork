@@ -5,7 +5,7 @@ import { LEVELS, mulberry32 } from '../src/braid.js';
 import { TangleTracker } from '../src/topology.js';
 
 export function runMoves(rope, target, moves, onStep) {
-  rope.pressure = 0.02;
+  rope.pressure = +(process.env.P || 0.02);
   for (const mv of moves) {
     const { a, b, pull, lift, frames = 90, rest = 72 } = mv;
     const pa = Array.from(rope.p.slice(a * 3, a * 3 + 3)), pb = Array.from(rope.p.slice(b * 3, b * 3 + 3));
@@ -25,11 +25,11 @@ export function runMoves(rope, target, moves, onStep) {
 if (process.argv[1].endsWith('search.mjs')) {
   const lv = +process.argv[2], L = LEVELS[lv];
   const spec = { ...L, index: lv, seed: 1000 + lv * 17 };
-  for (let t = 0; t < 40; t++) {
+  for (let t = 0; t < 12; t++) {
     const { rope, target } = makePuzzle(spec);
     const tgt = target ? target + 1 : 0;
     const rnd = mulberry32(t * 31 + 7), moves = [];
-    for (let m = 0; m < 8; m++) {
+    for (let m = 0; m < 10; m++) {
       const a = Math.floor(rnd() * rope.n), b = (a + Math.floor(rope.n * (0.3 + rnd() * 0.4))) % rope.n;
       moves.push({ a, b, pull: 0.04 + rnd() * 0.1, lift: (rnd() - 0.5) * 0.12 });
     }

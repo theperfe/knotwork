@@ -89,6 +89,7 @@ const fs = require('fs');
         await this.idle(30);
       },
       async solveByMoves(maxMoves, seed) {
+        while (k.state === 'tying') await this.tick();
         let r = seed;
         const rnd = () => ((r = (r * 1103515245 + 12345) % 2147483648) / 2147483648);
         for (let m = 0; m < maxMoves && k.state === 'play'; m++) {
@@ -161,7 +162,7 @@ const fs = require('fs');
       T.cap('Some tangles hide a real knot<small>No amount of pulling can undo it, only simplify it</small>');
       await T.idle(84);
       T.cap('Simplify it to its fewest crossings…');
-      const r = await T.solveByMoves(14, 3);
+      const r = await T.solveByMoves(24, 3);
       T.cap('…and Knotwork names the knot you found'); await T.idle(150); T.cap(''); return r;`,
     daily: `const T = window.T, k = T.k;
       k.toMenu(); await T.idle(30);
