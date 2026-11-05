@@ -1,0 +1,22 @@
+{
+  "name": "knotwork",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "node test/physics.test.mjs",
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@iwsdk/core": "^1.0.1"
+  },
+  "devDependencies": {
+    "@iwsdk/vite-plugin-iwer": "^0.2.2",
+    "iwer": "^2.8.0",
+    "vite": "^7.3.7"
+  }
+}

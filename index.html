@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Knotwork</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #05060c; color: #fff; font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; overflow: hidden; }
+    #scene-container { position: fixed; inset: 0; }
+    #overlay { position: fixed; left: 0; right: 0; bottom: 28px; display: flex; flex-direction: column; align-items: center; gap: 10px; pointer-events: none; opacity: 0; transition: opacity .4s; }
+    #overlay.ready { opacity: 1; }
+    #enter { pointer-events: auto; font: 700 20px system-ui, Arial; padding: 14px 34px; border-radius: 999px; border: 2px solid #5fd6ff; background: rgba(10,20,34,.85); color: #fff; cursor: pointer; }
+    #enter:disabled { border-color: #556; color: #aab; cursor: default; }
+    #hint { font-size: 13px; opacity: .6; text-align: center; padding: 0 16px; }
+  </style>
+</head>
+<body>
+  <div id="scene-container"></div>
+  <div id="overlay">
+    <button id="enter">Loading…</button>
+    <div id="hint">Hands-only on Meta Quest. In a desktop browser: drag the rope with the mouse, right-drag to look around, scroll to push and pull.</div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
