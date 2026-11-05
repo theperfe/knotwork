@@ -7,8 +7,9 @@ import { LEVELS, dailySpec, KNOTS } from './braid.js';
 import { TangleTracker, crossings } from './topology.js';
 import { KnotView } from './knotview.js';
 import { Pointers, rayToPlane } from './input.js';
-import { Panel, UIInput } from './ui.js';
+import { Panel, UIInput, fitText } from './ui.js';
 import { Sound } from './audio.js';
+import { HandView } from './handview.js';
 import { store, fmt } from './store.js';
 
 const GRAB_RANGE = 0.045;
@@ -19,11 +20,13 @@ export class GameSystem extends createSystem({}) {
   init() {
     const world = this.world;
     window.knotwork = this; // handy for tests and the demo recorder
+    this.store = store;
     this.sound = new Sound();
     this.pointers = new Pointers(world);
     this.ui = new UIInput();
     this.stage = new Group(); this.scene.add(this.stage);
     this.buildEnvironment();
+    this.handView = new HandView(this.scene);
     this.anchor = new Vector3(0, 1.18, -0.42);
     this.placed = false;
     this.state = 'menu';
@@ -38,7 +41,7 @@ export class GameSystem extends createSystem({}) {
     this.menu = this.ui.add(new Panel(0.42, 0.36));
     this.menu.mesh.position.set(0, -0.075, -0.02); this.stage.add(this.menu.mesh);
     this.result = this.ui.add(new Panel(0.4, 0.22));
-    this.result.mesh.position.set(0, 0.26, -0.04); this.stage.add(this.result.mesh);
+    this.result.mesh.position.set(0, 0.29, -0.06); this.stage.add(this.result.mesh);
 
     // pinch cursors + grab target ring
     this.cursors = new Map();
@@ -148,13 +151,13 @@ export class GameSystem extends createSystem({}) {
     const prog = this.c0 > this.target ? 1 - (Math.min(left, this.c0) - this.target) / (this.c0 - this.target) : 0;
     this.hud.mesh.visible = !this.preview && st !== 'menu';
     this.hud.setContent((ctx, W, H) => {
-      ctx.fillStyle = '#8fe3ff'; ctx.font = '700 28px system-ui, Arial';
-      ctx.fillText(s.daily ? `DAILY KNOT #${s.number}` : `LEVEL ${s.index + 1} · ${s.name.toUpperCase()}`, 34, 52);
+      ctx.fillStyle = '#8fe3ff';
+      fitText(ctx, s.daily ? `DAILY KNOT #${s.number}` : `LEVEL ${s.index + 1} · ${s.name.toUpperCase()}`, 34, 52, W - 250, 28);
       ctx.fillStyle = '#fff'; ctx.font = '700 46px system-ui, Arial'; ctx.textAlign = 'right';
       ctx.fillText(fmt(this.elapsed), W - 34, 62); ctx.textAlign = 'left';
       ctx.font = '500 24px system-ui, Arial'; ctx.fillStyle = 'rgba(255,255,255,0.75)';
       const msg = st === 'tying' ? 'Tying your knot…' : st === 'solved' ? 'Free!' : !this.started ? (s.index === 0 && !s.daily ? 'Pinch the rope and pull it loose' : 'Pinch and pull. Strands are solid.') : this.target ? `Crossings: ${left} · a real knot hides inside` : `Crossings left: ${left}`;
-      ctx.fillText(msg, 34, 100);
+      fitText(ctx, msg, 34, 100, W - 68, 24, 500);
       // progress bar
       const bx = 34, by = 106, bw = W - 68, bh = 0;
       ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(bx, H - 18, bw, 6);
@@ -214,9 +217,9 @@ export class GameSystem extends createSystem({}) {
       ctx.fillStyle = '#ffd36b'; ctx.font = '700 32px system-ui, Arial'; ctx.fillText(s.daily ? `DAILY KNOT #${s.number}` : s.name.toUpperCase(), W / 2, 56);
       const K = this.knot;
       ctx.fillStyle = '#fff'; ctx.font = '800 66px system-ui, Arial';
-      ctx.fillText(K.crossings ? `It's a ${K.name} (${K.symbol})` : `Free in ${fmt(r.t)}`, W / 2, 130);
-      if (K.crossings) { ctx.font = '600 28px system-ui, Arial'; ctx.fillStyle = '#9fe8ff'; ctx.fillText(`Found in ${fmt(r.t)}. No amount of pulling gets it below ${K.crossings} crossings.`, W / 2, 172); }
-      ctx.font = '500 24px system-ui, Arial'; ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fillText(r.line2, W / 2, this.knot.crossings ? 208 : 180);
+      fitText(ctx, K.crossings ? `It's a ${K.name} (${K.symbol})` : `Free in ${fmt(r.t)}`, W / 2, 130, W - 60, 66, 800);
+      if (K.crossings) { ctx.fillStyle = '#9fe8ff'; fitText(ctx, `Found in ${fmt(r.t)}. It can never have fewer than ${K.crossings} crossings.`, W / 2, 172, W - 60, 28, 600); }
+      ctx.fillStyle = 'rgba(255,255,255,0.7)'; fitText(ctx, r.line2, W / 2, this.knot.crossings ? 208 : 180, W - 60, 24, 500);
       ctx.textAlign = 'left';
     }, [
       ...(next != null ? [{ x: 0.045, y: 0.165, w: 0.145, h: 0.045, label: 'Next level', accent: '#ffd36b', onPress: () => this.startPuzzle({ ...LEVELS[next], index: next, seed: 1000 + next * 17 }) }] : []),
@@ -227,7 +230,8 @@ export class GameSystem extends createSystem({}) {
   recenter() { this.placed = false; }
 
   place() {
-    const cam = this.world.camera;
+    const xr = this.world.renderer.xr;
+    const cam = xr.isPresenting ? xr.getCamera() : this.world.camera;
     cam.getWorldPosition(_v);
     const fwd = cam.getWorldDirection(_w).setY(0); if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, -1); fwd.normalize();
     if (this.pointers.xr) {
@@ -250,6 +254,9 @@ export class GameSystem extends createSystem({}) {
     this.pointers.update(this.xrFrame);
     if (!this.pointers.xr) this.updateDesktopCamera();
     this.ui.update(dt, this.pointers, () => this.sound.click());
+    this.handView.update(this.pointers.xr ? this.pointers.hands() : []);
+    // hide the SDK's own skinned hand models: we draw our own
+    if (this.pointers.xr && (this.frameNo = (this.frameNo || 0) + 1) % 30 === 0) this.world.player.traverse(o => { if (o.isSkinnedMesh) o.visible = false; });
 
     const rope = this.rope;
     if (this.state === 'tying' || (this.state === 'menu' && this.tieFrames)) {

@@ -44,6 +44,14 @@ export class Pointers {
           const tp = tj && frame.getJointPose(tj, ref), ip = ij && frame.getJointPose(ij, ref);
           if (!tp || !ip) continue;
           const p = this.get(side); p.kind = 'hand'; p.tracked = true;
+          // all 25 joints, for the stylised hand renderer
+          if (!p.joints) { p.joints = new Float32Array(25 * 3); p.radii = new Float32Array(25); p.poses = new Float32Array(25 * 16); p.spaces = [...src.hand.values()]; }
+          if (frame.fillPoses && frame.fillPoses(p.spaces, ref, p.poses)) {
+            for (let j = 0; j < 25; j++) { _v.set(p.poses[j * 16 + 12], p.poses[j * 16 + 13], p.poses[j * 16 + 14]).applyMatrix4(origin); p.joints.set([_v.x, _v.y, _v.z], j * 3); }
+            if (frame.fillJointRadii) frame.fillJointRadii(p.spaces, p.radii);
+          } else {
+            p.spaces.forEach((sp, j) => { const jp = frame.getJointPose(sp, ref); if (jp) { _v.set(jp.transform.position.x, jp.transform.position.y, jp.transform.position.z).applyMatrix4(origin); p.joints.set([_v.x, _v.y, _v.z], j * 3); p.radii[j] = jp.radius || 0.008; } });
+          }
           const t = new Vector3(tp.transform.position.x, tp.transform.position.y, tp.transform.position.z).applyMatrix4(origin);
           p.tip.set(ip.transform.position.x, ip.transform.position.y, ip.transform.position.z).applyMatrix4(origin);
           const d = t.distanceTo(p.tip);

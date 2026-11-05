@@ -11,6 +11,13 @@ export function rr(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
 }
 
+// draw text shrunk to fit maxW
+export function fitText(ctx, text, x, y, maxW, size, weight = 700) {
+  let fs = size; ctx.font = `${weight} ${fs}px system-ui, Arial`;
+  while (ctx.measureText(text).width > maxW && fs > 10) { fs -= 2; ctx.font = `${weight} ${fs}px system-ui, Arial`; }
+  ctx.fillText(text, x, y);
+}
+
 export class Panel {
   constructor(w, h, { bg = true } = {}) {
     this.w = w; this.h = h; this.bg = bg;

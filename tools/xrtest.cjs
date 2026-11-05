@@ -14,7 +14,7 @@ const { chromium } = require('playwright');
   await page.evaluate(() => { const d = window.IWER_DEVICE; d.primaryInputMode = 'hand'; d.stereoEnabled = false; d.position.set(0, 1.25, 0); });
   await page.click('#enter');
   await page.waitForFunction(() => !!window.world.session, null, { timeout: 15000 });
-  await page.evaluate(() => { const d = window.IWER_DEVICE; d.primaryInputMode = 'hand'; });
+  await page.evaluate(() => { const d = window.IWER_DEVICE; d.primaryInputMode = 'hand'; d.position.set(0, 1.25, 0); window.knotwork.recenter(); });
   await page.waitForTimeout(1500);
   console.log('[test] inputs', await page.evaluate(() => JSON.stringify([...window.knotwork.pointers.list.values()].map(p => [p.id, p.kind, p.tracked, p.pos.toArray().map(v => +v.toFixed(3)), p.tip.toArray().map(v => +v.toFixed(3))]))));
   // helper: closed-loop move of a hand so its pinch point lands on a world target
@@ -47,10 +47,11 @@ const { chromium } = require('playwright');
     await window.T.handTo('right', front.x, front.y, front.z + 0.1, 'index-tip');
     return 'poked ' + label + ' state=' + k.state + ' page=' + k.page + ' ' + dbg;
   }, label);
+  await page.evaluate((lvl) => { const st = window.knotwork.store; for (let i = 0; i < lvl; i++) if (st.levelBest(i) == null) st.data.levels[i] = 99; window.knotwork.showMenu('main'); }, +lvl);
   console.log('[test]', await pokeButton('Levels'));
   await page.waitForTimeout(500);
   await page.screenshot({ path: out + '-1-levels.png' });
-  const LNAMES = ['Twist', 'Double Twist', 'Figure Loop', 'Braid', 'Snarl'];
+  const LNAMES = ['Twist', 'Double Twist', 'Figure Loop', 'Hidden Trefoil', 'Snarl', 'Hidden Eight', 'Hydra', 'Five Petals', 'Mystery', 'Gordian'];
   console.log('[test]', await pokeButton(`${+lvl + 1}. ${LNAMES[+lvl]}`));
   await page.waitForFunction(() => window.knotwork.state === 'play', null, { timeout: 20000 });
   await page.waitForTimeout(300);
@@ -78,9 +79,11 @@ const { chromium } = require('playwright');
   const solved = await page.evaluate(async () => {
     const k = window.knotwork; await window.T.pinch('right', 0); await window.T.pinch('left', 0);
     for (let i = 0; i < 3; i++) await window.T.raf();
-    const n = k.rope.n, R = k.rope.rest * n / (2 * Math.PI);
-    for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; k.rope.p.set([R * Math.cos(a), 0.003 * Math.sin(3 * a), R * Math.sin(a)], i * 3); }
-    k.rope.prev.set(k.rope.p);
+    if (k.target === 0) {
+      const n = k.rope.n, R = k.rope.rest * n / (2 * Math.PI);
+      for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2; k.rope.p.set([R * Math.cos(a), 0.003 * Math.sin(3 * a), R * Math.sin(a)], i * 3); }
+      k.rope.prev.set(k.rope.p);
+    } else k.solve(); // a knot can't be faked into a circle: jump straight to the reveal
     for (let i = 0; i < 40 && k.state !== 'solved'; i++) await window.T.raf();
     return k.state;
   });
