@@ -60,8 +60,11 @@ export class Rope {
   release(id) { this.grabs.delete(id); }
 
   step(dt) {
-    const h = dt / this.substeps;
-    for (let s = 0; s < this.substeps; s++) this.substep(h);
+    // keep the substep size at or below 1/432 s whatever the frame rate, so
+    // the per-substep motion clamp (anti-tunnelling) means the same thing
+    const subs = Math.max(this.substeps, Math.ceil(dt * 432 - 1e-6));
+    const h = dt / subs;
+    for (let s = 0; s < subs; s++) this.substep(h);
     for (let i = 0; i < this.n; i++) this.contact[i] *= 0.9;
   }
 

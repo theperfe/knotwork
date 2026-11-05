@@ -247,6 +247,8 @@ export class GameSystem extends createSystem({}) {
 
   // ---------- frame ----------
   update(dt) {
+    // demo recorder: a virtual clock that advances only when told to
+    if (window.KNOTWORK_CLOCK) { const c = window.KNOTWORK_CLOCK; if (!c.pending) { this.renderOnly(); return; } c.pending = false; dt = c.dt; }
     dt = Math.min(dt, 1 / 30);
     const xrNow = !!this.world.session;
     if (xrNow !== this.wasXR) { this.wasXR = xrNow; this.placed = false; if (xrNow) this.sound.start(); }
@@ -305,6 +307,12 @@ export class GameSystem extends createSystem({}) {
     const showMenuKnot = this.state === 'menu';
     if (showMenuKnot) { this.view.mesh.position.set(0, 0.2, -0.12); this.view.glow.position.copy(this.view.mesh.position); }
     else { this.view.mesh.position.set(0, 0, 0); this.view.glow.position.set(0, 0, 0); }
+  }
+
+  renderOnly() {
+    // keep hands and UI hover drawn while the virtual clock is paused
+    this.pointers.update(this.xrFrame);
+    this.handView.update(this.pointers.xr ? this.pointers.hands() : []);
   }
 
   handleGrabs() {
