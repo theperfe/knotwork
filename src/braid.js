@@ -16,7 +16,16 @@ export function mulberry32(seed) {
 }
 
 // A braid word is a list of signed generators: +i means σi, -i means σi⁻¹ (1-based).
-export function makeUnknotBraid({ strands, conjLength, seed }) {
+// Known knots as braid words (closures). Conjugating keeps the knot type.
+export const KNOTS = {
+  unknot: { name: 'Unknot', symbol: '0₁', crossings: 0 },
+  trefoil: { name: 'Trefoil', symbol: '3₁', crossings: 3, core: [[1, 1, 1], 2] },
+  figure8: { name: 'Figure-Eight', symbol: '4₁', crossings: 4, core: [[1, -2, 1, -2], 3] },
+  cinquefoil: { name: 'Cinquefoil', symbol: '5₁', crossings: 5, core: [[1, 1, 1, 1, 1], 2] },
+  threeTwist: { name: 'Three-Twist', symbol: '5₂', crossings: 5, core: [[1, 1, 1, 2, -1, 2], 3] },
+};
+
+export function makeUnknotBraid({ strands, conjLength, seed, knot = 'unknot' }) {
   const rnd = mulberry32(seed);
   const w = [];
   for (let i = 0; i < conjLength; i++) {
@@ -26,8 +35,13 @@ export function makeUnknotBraid({ strands, conjLength, seed }) {
     } while (w.length && w[w.length - 1] === -g); // avoid trivial σσ⁻¹ cancellation
     w.push(g);
   }
-  const core = [];
-  for (let i = 1; i < strands; i++) core.push(rnd() < 0.5 ? i : -i);
+  let core = [];
+  const K = KNOTS[knot];
+  if (K.core) {
+    // embed the knot's braid on the first strands, then stabilise up to `strands`
+    const [word, s0] = K.core; core = word.slice();
+    for (let i = s0; i < strands; i++) core.push(rnd() < 0.5 ? i : -i);
+  } else for (let i = 1; i < strands; i++) core.push(rnd() < 0.5 ? i : -i);
   const winv = w.slice().reverse().map(g => -g);
   return [...w, ...core, ...winv];
 }
@@ -90,19 +104,26 @@ export function resampleClosed(pts, n) {
 }
 
 // Level table. Early levels teach; later ones get long conjugators.
+// Unknots must be freed completely; real knots can only be simplified down to
+// their true crossing number, and the game then names the knot you found.
 export const LEVELS = [
   { name: 'Twist', strands: 2, conj: 0 },
   { name: 'Double Twist', strands: 2, conj: 2 },
-  { name: 'Figure Loop', strands: 3, conj: 0 },
-  { name: 'Braid', strands: 3, conj: 2 },
+  { name: 'Figure Loop', strands: 3, conj: 1 },
+  { name: 'Hidden Trefoil', strands: 3, conj: 2, knot: 'trefoil' },
   { name: 'Snarl', strands: 3, conj: 3 },
-  { name: 'Cat\'s Cradle', strands: 3, conj: 4 },
+  { name: 'Hidden Eight', strands: 3, conj: 3, knot: 'figure8' },
   { name: 'Hydra', strands: 4, conj: 3 },
+  { name: 'Five Petals', strands: 3, conj: 3, knot: 'cinquefoil' },
+  { name: 'Mystery', strands: 4, conj: 3, knot: 'threeTwist' },
   { name: 'Gordian', strands: 4, conj: 5 },
 ];
 export function dailySpec(date = new Date()) {
   const day = Math.floor(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / 86400000);
   const rnd = mulberry32(day * 2654435761);
   const strands = 3 + (rnd() < 0.35 ? 1 : 0);
-  return { name: 'Daily Knot', number: day - 20400, strands, conj: 3 + Math.floor(rnd() * 2), seed: day };
+  // most days hide a real knot; you find out which one when it's simplified
+  const pool = ['unknot', 'trefoil', 'trefoil', 'figure8', 'unknot', 'cinquefoil', 'figure8'];
+  const knot = pool[Math.floor(rnd() * pool.length)];
+  return { name: 'Daily Knot', number: day - 20400, strands, conj: 3 + Math.floor(rnd() * 2), seed: day, knot };
 }

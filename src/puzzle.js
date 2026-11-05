@@ -1,4 +1,4 @@
-import { makeUnknotBraid, braidToCurve, resampleClosed, mulberry32 } from './braid.js';
+import { makeUnknotBraid, braidToCurve, resampleClosed, mulberry32, KNOTS } from './braid.js';
 import { Rope } from './rope.js';
 import { TangleTracker } from './topology.js';
 
@@ -9,19 +9,21 @@ export const ROPE_RADIUS = 0.0075;
 export const CRUMPLE = { steps: 50, pressure: -0.12 };
 // Try successive warp seeds until the loop really looks tangled from every angle.
 export function makePuzzle(spec, opts = {}) {
-  const want = spec.minCrossings ?? Math.max(2, spec.strands + spec.conj);
+  const target = KNOTS[spec.knot || 'unknot'].crossings;
+  const want = spec.minCrossings ?? Math.max(2, spec.strands + spec.conj) + target * 2;
   let best = null;
   for (let k = 0; k < 8; k++) {
     const r = makeOne({ ...spec, seed: (spec.seed ?? 1) + k * 7919 }, opts);
     if (!best || r.crossings > best.crossings) best = r;
     if (r.crossings >= want) break;
   }
+  best.target = target;
   return best;
 }
 
 function makeOne(spec, { crumpleSteps = CRUMPLE.steps, record = false } = {}) {
   const { strands, conj, seed = 1 } = spec;
-  const word = makeUnknotBraid({ strands, conjLength: conj, seed });
+  const word = makeUnknotBraid({ strands, conjLength: conj, seed, knot: spec.knot || 'unknot' });
   const R = 0.05 + strands * 0.012;
   const raw = braidToCurve(word, strands, { R, slot: 0.026, lift: 0.024 });
   let len = 0; for (let i = 0; i < raw.length; i++) { const a = raw[i], b = raw[(i + 1) % raw.length]; len += Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]); }
@@ -33,9 +35,11 @@ function makeOne(spec, { crumpleSteps = CRUMPLE.steps, record = false } = {}) {
   const tw = (rnd0() - 0.5) * 2.4, bend = (rnd0() - 0.5) * 1.6, sy = 2.2 + rnd0();
   for (const q of points) {
     let [x, y, z] = q; y *= sy;
-    const a = tw * z / R, ca = Math.cos(a), sa = Math.sin(a);
+    // each rotation's angle depends only on the coordinate along its own axis,
+    // so the map is a diffeomorphism (a twist), never a fold
+    const a = tw * x / R, ca = Math.cos(a), sa = Math.sin(a);
     [y, z] = [y * ca - z * sa, y * sa + z * ca];
-    const b = bend * x / R, cb = Math.cos(b), sb = Math.sin(b);
+    const b = bend * z / R, cb = Math.cos(b), sb = Math.sin(b);
     [x, y] = [x * cb - y * sb, x * sb + y * cb];
     q[0] = x; q[1] = y; q[2] = z;
   }

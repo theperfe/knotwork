@@ -3,7 +3,7 @@ import {
   BufferAttribute, PointsMaterial, AdditiveBlending, Color, HemisphereLight, DirectionalLight, Fog,
 } from '@iwsdk/core';
 import { makePuzzle, ROPE_RADIUS } from './puzzle.js';
-import { LEVELS, dailySpec } from './braid.js';
+import { LEVELS, dailySpec, KNOTS } from './braid.js';
 import { TangleTracker, crossings } from './topology.js';
 import { KnotView } from './knotview.js';
 import { Pointers, rayToPlane } from './input.js';
@@ -37,7 +37,7 @@ export class GameSystem extends createSystem({}) {
     this.bar.mesh.position.set(-0.25, -0.17, 0.03); this.bar.mesh.rotation.set(-0.45, 0.5, 0); this.stage.add(this.bar.mesh);
     this.menu = this.ui.add(new Panel(0.42, 0.36));
     this.menu.mesh.position.set(0, -0.075, -0.02); this.stage.add(this.menu.mesh);
-    this.result = this.ui.add(new Panel(0.36, 0.2));
+    this.result = this.ui.add(new Panel(0.4, 0.22));
     this.result.mesh.position.set(0, 0.26, -0.04); this.stage.add(this.result.mesh);
 
     // pinch cursors + grab target ring
@@ -81,8 +81,8 @@ export class GameSystem extends createSystem({}) {
   // ---------- puzzle lifecycle ----------
   startPuzzle(spec, { preview = false } = {}) {
     this.spec = spec;
-    const { rope, crossings: c0, frames } = makePuzzle(spec, { record: true });
-    this.rope = rope; this.c0 = Math.max(1, c0); this.tieFrames = frames; this.finalP = rope.p.slice();
+    const { rope, crossings: c0, frames, target } = makePuzzle(spec, { record: true });
+    this.rope = rope; this.c0 = Math.max(1, c0); this.target = target ? target + 1 : 0; this.trueCrossings = target; this.knot = KNOTS[spec.knot || 'unknot']; this.tieFrames = frames; this.finalP = rope.p.slice();
     if (this.view) this.view.dispose();
     this.view = new KnotView(this.stage, rope.n, rope.r);
     this.view.mesh.position.set(0, 0, 0);
@@ -117,6 +117,7 @@ export class GameSystem extends createSystem({}) {
     const dirSign = area >= 0 ? 1 : -1, th0 = Math.atan2(uv[0][1], uv[0][0]);
     const R = (rope.rest * n) / (Math.PI * 2);
     this.from = rope.p.slice(); this.to = new Float32Array(n * 3);
+    this.morph = this.target === 0;
     for (let i = 0; i < n; i++) {
       const th = th0 + dirSign * (i / n) * Math.PI * 2;
       _v.set(...c).addScaledVector(e1, R * Math.cos(th)).addScaledVector(e2, R * Math.sin(th));
@@ -144,7 +145,7 @@ export class GameSystem extends createSystem({}) {
   showHud() {
     const s = this.spec, st = this.state;
     const left = Number.isFinite(this.bestSeen) ? this.bestSeen : this.c0;
-    const prog = this.c0 ? 1 - Math.min(left, this.c0) / this.c0 : 0;
+    const prog = this.c0 > this.target ? 1 - (Math.min(left, this.c0) - this.target) / (this.c0 - this.target) : 0;
     this.hud.mesh.visible = !this.preview && st !== 'menu';
     this.hud.setContent((ctx, W, H) => {
       ctx.fillStyle = '#8fe3ff'; ctx.font = '700 28px system-ui, Arial';
@@ -152,7 +153,7 @@ export class GameSystem extends createSystem({}) {
       ctx.fillStyle = '#fff'; ctx.font = '700 46px system-ui, Arial'; ctx.textAlign = 'right';
       ctx.fillText(fmt(this.elapsed), W - 34, 62); ctx.textAlign = 'left';
       ctx.font = '500 24px system-ui, Arial'; ctx.fillStyle = 'rgba(255,255,255,0.75)';
-      const msg = st === 'tying' ? 'Tying your knot…' : st === 'solved' ? 'Free!' : !this.started ? (s.index === 0 && !s.daily ? 'Pinch the rope and pull it loose' : 'Pinch and pull. Strands are solid.') : `Crossings left: ${left}`;
+      const msg = st === 'tying' ? 'Tying your knot…' : st === 'solved' ? 'Free!' : !this.started ? (s.index === 0 && !s.daily ? 'Pinch the rope and pull it loose' : 'Pinch and pull. Strands are solid.') : this.target ? `Crossings: ${left} · a real knot hides inside` : `Crossings left: ${left}`;
       ctx.fillText(msg, 34, 100);
       // progress bar
       const bx = 34, by = 106, bw = W - 68, bh = 0;
@@ -191,15 +192,15 @@ export class GameSystem extends createSystem({}) {
     } else if (page === 'levels') {
       const btns = LEVELS.map((L, i) => {
         const col = i % 2, row = Math.floor(i / 2), best = store.levelBest(i), open = store.unlocked(i);
-        return { x: 0.04 + col * 0.175, y: 0.07 + row * 0.06, w: 0.165, h: 0.052, label: `${i + 1}. ${L.name}`, sub: best != null ? `best ${fmt(best)}` : open ? 'new' : 'locked', disabled: !open, onPress: () => this.startPuzzle({ ...L, index: i, seed: 1000 + i * 17 }) };
+        return { x: 0.04 + col * 0.175, y: 0.065 + row * 0.048, w: 0.165, h: 0.042, label: `${i + 1}. ${L.name}`, sub: best != null ? `best ${fmt(best)}` : open ? 'new' : 'locked', disabled: !open, onPress: () => this.startPuzzle({ ...L, index: i, seed: 1000 + i * 17 }) };
       });
-      btns.push({ x: 0.04, y: 0.315, w: 0.1, h: 0.035, label: 'Back', onPress: () => this.showMenu('main') });
+      btns.push({ x: 0.04, y: 0.315, w: 0.1, h: 0.033, label: 'Back', onPress: () => this.showMenu('main') });
       this.menu.setContent((ctx, W) => { ctx.fillStyle = '#8fe3ff'; ctx.font = '700 36px system-ui, Arial'; ctx.fillText('LEVELS', 56, 70); }, btns);
     } else {
       this.menu.setContent((ctx, W) => {
         ctx.fillStyle = '#8fe3ff'; ctx.font = '700 36px system-ui, Arial'; ctx.fillText('HOW TO PLAY', 56, 70);
-        ctx.fillStyle = '#fff'; ctx.font = '500 28px system-ui, Arial';
-        ['Every knot here is secretly a plain loop.', 'Pinch the rope with thumb and index finger,', 'then pull, lift and slide strands around each other.', '', 'Strands are solid: they can’t pass through.', 'Orange glow = strands pressing on each other.', '', 'It’s solved when, from some angle,', 'no strand crosses another.'].forEach((l, i) => ctx.fillText(l, 56, 130 + i * 40));
+        ctx.fillStyle = '#fff'; ctx.font = '500 25px system-ui, Arial';
+        ['Pinch the rope with thumb and index finger,', 'then pull, lift and slide strands around each other.', 'Strands are solid: they can’t pass through.', '', 'Some tangles are secretly a plain loop: free them', 'until, from some angle, no strand crosses another.', '', 'Others hide a real knot. Those can only be simplified.', 'Get it to its fewest crossings and we’ll name it.'].forEach((l, i) => ctx.fillText(l, 56, 130 + i * 40));
       }, [{ x: 0.04, y: 0.31, w: 0.1, h: 0.035, label: 'Back', onPress: () => this.showMenu('main') }]);
     }
   }
@@ -211,12 +212,15 @@ export class GameSystem extends createSystem({}) {
     this.result.setContent((ctx, W) => {
       ctx.textAlign = 'center';
       ctx.fillStyle = '#ffd36b'; ctx.font = '700 32px system-ui, Arial'; ctx.fillText(s.daily ? `DAILY KNOT #${s.number}` : s.name.toUpperCase(), W / 2, 56);
-      ctx.fillStyle = '#fff'; ctx.font = '800 76px system-ui, Arial'; ctx.fillText(`Free in ${fmt(r.t)}`, W / 2, 136);
-      ctx.font = '500 26px system-ui, Arial'; ctx.fillStyle = 'rgba(255,255,255,0.75)'; ctx.fillText(r.line2, W / 2, 180);
+      const K = this.knot;
+      ctx.fillStyle = '#fff'; ctx.font = '800 66px system-ui, Arial';
+      ctx.fillText(K.crossings ? `It's a ${K.name} (${K.symbol})` : `Free in ${fmt(r.t)}`, W / 2, 130);
+      if (K.crossings) { ctx.font = '600 28px system-ui, Arial'; ctx.fillStyle = '#9fe8ff'; ctx.fillText(`Found in ${fmt(r.t)}. No amount of pulling gets it below ${K.crossings} crossings.`, W / 2, 172); }
+      ctx.font = '500 24px system-ui, Arial'; ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.fillText(r.line2, W / 2, this.knot.crossings ? 208 : 180);
       ctx.textAlign = 'left';
     }, [
-      ...(next != null ? [{ x: 0.03, y: 0.14, w: 0.145, h: 0.045, label: 'Next level', accent: '#ffd36b', onPress: () => this.startPuzzle({ ...LEVELS[next], index: next, seed: 1000 + next * 17 }) }] : []),
-      { x: next != null ? 0.185 : 0.105, y: 0.14, w: 0.145, h: 0.045, label: 'Menu', onPress: () => this.toMenu() },
+      ...(next != null ? [{ x: 0.045, y: 0.165, w: 0.145, h: 0.045, label: 'Next level', accent: '#ffd36b', onPress: () => this.startPuzzle({ ...LEVELS[next], index: next, seed: 1000 + next * 17 }) }] : []),
+      { x: next != null ? 0.21 : 0.1275, y: 0.165, w: 0.145, h: 0.045, label: 'Menu', onPress: () => this.toMenu() },
     ]);
   }
 
@@ -262,7 +266,7 @@ export class GameSystem extends createSystem({}) {
       const { best } = this.tracker.update(rope.p, rope.n, 2);
       if (best < this.bestSeen) { if (Number.isFinite(this.bestSeen) && this.started) this.sound.progress(true); this.bestSeen = best; }
       else if (best > this.bestSeen + 2) this.bestSeen = best; // got more tangled
-      if (best === 0 && crossings(rope.p, rope.n, this.tracker.bestDir, 1) === 0) this.solveHold += dt; else this.solveHold = 0;
+      if (best <= this.target && crossings(rope.p, rope.n, this.tracker.bestDir, this.target + 1) <= this.target) this.solveHold += dt; else this.solveHold = 0;
       if (this.solveHold > SOLVE_HOLD && this.started) this.solve();
       // tension feedback
       let maxS = 0; for (let i = 0; i < rope.n; i++) maxS = Math.max(maxS, rope.dist(i, (i + 1) % rope.n) / rope.rest - 1);
@@ -275,8 +279,10 @@ export class GameSystem extends createSystem({}) {
       for (let i = 0; i < rope.n; i++) { const x = rope.p[i * 3], z = rope.p[i * 3 + 2]; rope.p[i * 3] = x * c - z * s; rope.p[i * 3 + 2] = x * s + z * c; }
     } else if (this.state === 'solved') {
       this.solvedT += dt;
-      const k = Math.min(1, this.solvedT / 1.1), e = k * k * (3 - 2 * k);
-      for (let i = 0; i < rope.p.length; i++) rope.p[i] = this.from[i] + (this.to[i] - this.from[i]) * e;
+      if (this.morph) {
+        const k = Math.min(1, this.solvedT / 1.1), e = k * k * (3 - 2 * k);
+        for (let i = 0; i < rope.p.length; i++) rope.p[i] = this.from[i] + (this.to[i] - this.from[i]) * e;
+      } else { rope.pressure = 0.35; rope.step(dt); } // a real knot: let it relax into its true shape
       const pos = this.burst.geometry.attributes.position, bt = this.solvedT;
       if (bt < 2.2) { for (let i = 0; i < pos.count; i++) pos.setXYZ(i, pos.getX(i) + this.burstVel[i * 3] * dt, pos.getY(i) + this.burstVel[i * 3 + 1] * dt, pos.getZ(i) + this.burstVel[i * 3 + 2] * dt); pos.needsUpdate = true; }
       this.burst.material.opacity = Math.max(0, 1 - bt / 2.0);
@@ -285,7 +291,7 @@ export class GameSystem extends createSystem({}) {
     for (let i = 0; i < rope.n; i++) this.held[i] *= 0.85;
     for (const g of rope.grabs.values()) for (let k = -4; k <= 4; k++) this.held[(g.i + k + rope.n) % rope.n] = Math.max(this.held[(g.i + k + rope.n) % rope.n], Math.exp(-k * k / 6));
     const left = Number.isFinite(this.bestSeen) ? this.bestSeen : this.c0;
-    const tangle = this.state === 'solved' ? 0 : this.state === 'play' ? Math.min(1, left / Math.max(1, this.c0)) : 1;
+    const tangle = this.state === 'solved' ? 0 : this.state === 'play' ? Math.min(1, Math.max(0, left - this.target) / Math.max(1, this.c0 - this.target)) : 1;
     this.t = (this.t || 0) + dt;
     this.view.update(rope.p, { tangle, contact: rope.contact, held: this.held, solvedK: this.state === 'solved' ? Math.min(1, this.solvedT * 1.5) * 0.6 : 0, pulse: this.t });
     this.view.visible = !(this.state === 'menu' && this.page !== 'main');
@@ -302,7 +308,12 @@ export class GameSystem extends createSystem({}) {
       const local = this.stage.worldToLocal(_v.copy(p.pos)).toArray();
       const cur = this.cursor(p.id); cur.visible = true; cur.position.fromArray(local);
       const g = rope.grabs.get(p.id);
-      if (g) { rope.moveGrab(p.id, local); cur.material.color.set(0xffffff); }
+      if (g) {
+        rope.moveGrab(p.id, local); cur.material.color.set(0xffffff);
+        // the rope can't stretch: if the hand gets far ahead of a taut strand, it slips out
+        const o = g.i * 3, gap = Math.hypot(rope.p[o] - local[0], rope.p[o + 1] - local[1], rope.p[o + 2] - local[2]);
+        if (gap > 0.09) { rope.release(p.id); this.sound.release(); continue; }
+      }
       else {
         const i = rope.nearest(local, GRAB_RANGE);
         cur.material.color.set(i >= 0 ? 0x9fe8ff : 0x506070);

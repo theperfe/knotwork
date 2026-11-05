@@ -50,4 +50,18 @@ ok(d.strands >= 3, `daily spec ${JSON.stringify(d)}`);
   let min = Infinity; for (let i = 0; i < 300; i++) { rope.step(1 / 72); if (i % 30 === 0) min = Math.min(min, TangleTracker.minCrossings(rope.p, rope.n)); }
   ok(min >= 3, `trefoil keeps >=3 crossings (min seen ${min})`);
 }
+// a hidden trefoil built from braids must never simplify below 3 crossings
+{
+  const { rope, target } = makePuzzle({ ...LEVELS[3], seed: 55 });
+  const rnd = mulberry32(11); let min = Infinity;
+  for (let m = 0; m < 12; m++) {
+    const a = Math.floor(rnd() * rope.n), b = (a + Math.floor(rope.n / 2)) % rope.n;
+    const pa = Array.from(rope.p.slice(a * 3, a * 3 + 3)), pb = Array.from(rope.p.slice(b * 3, b * 3 + 3));
+    rope.grab('A', a, pa); rope.grab('B', b, pb);
+    for (let s = 0; s < 50; s++) { rope.moveGrab('A', pa.map((v, k) => v + (v - pb[k]) * s / 60)); rope.moveGrab('B', pb.map((v, k) => v + (v - pa[k]) * s / 60)); rope.step(1 / 72); }
+    rope.release('A'); rope.release('B'); rope.pressure = 0.4; for (let s = 0; s < 100; s++) rope.step(1 / 72); rope.pressure = 0;
+    min = Math.min(min, TangleTracker.minCrossings(rope.p, rope.n));
+  }
+  ok(target === 3 && min === 3, `hidden trefoil stays a trefoil: target ${target}, fewest crossings seen ${min}`);
+}
 process.exit(fail ? 1 : 0);

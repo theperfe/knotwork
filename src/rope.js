@@ -31,7 +31,7 @@ export class Rope {
     this.cellStart = new Int32Array(this.H + 1);
     this.cellEntries = new Int32Array(n);
     this.segCell = new Int32Array(n * 3);
-    this.grabMass = 0.04; // held nodes are heavy, not immovable: a taut rope can't be over-stretched
+    this.grabMass = 0.5; // held nodes are only a little heavier: a taut rope slips rather than stretches
     this.rnd = Math.random;
   }
   dist(i, j) {
@@ -97,6 +97,7 @@ export class Rope {
     }
     for (let it = 0; it < this.iterations; it++) {
       this.solveLengths(1, this.rest, 1.0);
+      this.solveLengths(1, this.rest, 1.0);
       this.solveLengths(2, this.rest2, 0.08);
       this.solveCollisions();
     }
@@ -122,6 +123,7 @@ export class Rope {
   // counting-sort spatial hash of segment midpoints (built once per substep;
   // the cell is large enough to cover the motion within one substep)
   buildHash() {
+    this.cell = Math.max(this.rest, this.maxLen || this.rest) + 2.5 * this.r;
     const { n, p, cell, H, cellStart, cellEntries, segCell } = this;
     cellStart.fill(0);
     const keys = this._keys || (this._keys = new Int32Array(n));
@@ -140,7 +142,10 @@ export class Rope {
     const { n, p, cellStart, cellEntries, segCell } = this;
     const seen = this._seen || (this._seen = new Int32Array(n).fill(-1));
     let pairs = this._pairs || (this._pairs = new Int32Array(n * 32));
-    const reach = this.rest + this.minGap * 1.5, reach2 = reach * reach;
+    let maxLen = this.rest;
+    for (let i = 0; i < n; i++) { const l = this.dist(i, (i + 1) % n); if (l > maxLen) maxLen = l; }
+    this.maxLen = maxLen;
+    const reach = maxLen + this.minGap * 1.5, reach2 = reach * reach;
     let m = 0;
     for (let i = 0; i < n; i++) {
       const i1 = (i + 1) % n;

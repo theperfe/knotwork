@@ -86,7 +86,10 @@ export class TangleTracker {
       const d = DIRS[this.k++ % DIRS.length];
       this.sweep.push([crossings(p, n, d), d]);
     }
-    if (this.sweep.length >= DIRS.length + 8) this.sweep.splice(0, this.sweep.length - (DIRS.length + 8));
+    // plus one jittered random direction, so no viewing angle is missed for long
+    const r = [Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5], rl = Math.hypot(...r) || 1;
+    const rd = r.map(v => v / rl); this.sweep.push([crossings(p, n, rd), rd]);
+    if (this.sweep.length >= DIRS.length + 14) this.sweep.splice(0, this.sweep.length - (DIRS.length + 14));
     let best = Infinity, bd = pn;
     for (const [c, d] of this.sweep) if (c < best) { best = c; bd = d; }
     this.best = best; this.bestDir = bd; this.current = c0;
