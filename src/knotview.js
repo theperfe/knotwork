@@ -4,7 +4,7 @@ import { BufferGeometry, BufferAttribute, Mesh, MeshStandardMaterial, MeshBasicM
 // per-vertex colour: hue follows how tangled the loop still is, contact
 // points glow warm (shows where it's jammed), and held sections glow white.
 const RAD = 10;
-const WARM = new Color(1.0, 0.22, 0.62), COOL = new Color(0.18, 0.85, 1.0), HOT = new Color(1.0, 0.62, 0.2), HELD = new Color(1, 1, 1), GOLD = new Color(1.0, 0.84, 0.35);
+const WARM = new Color(1.0, 0.05, 0.42), COOL = new Color(0.0, 0.62, 1.0), HOT = new Color(1.0, 0.45, 0.02), HELD = new Color(1, 1, 1), GOLD = new Color(1.0, 0.72, 0.08);
 
 export class KnotView {
   constructor(scene, n, radius) {
@@ -22,11 +22,11 @@ export class KnotView {
     }
     g.setIndex(new BufferAttribute(idx, 1));
     this.geo = g;
-    this.mesh = new Mesh(g, new MeshStandardMaterial({ vertexColors: true, roughness: 0.32, metalness: 0.0, emissive: 0x000000 }));
+    this.mesh = new Mesh(g, new MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.0, emissive: 0x000000 }));
     this.mesh.frustumCulled = false;
     // neon look: vertex colour also drives emission, lighting still reads over/under
     this.mesh.material.onBeforeCompile = sh => {
-      sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += vColor * 0.42;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n  totalEmissiveRadiance += vColor * 0.3;');
     };
     // emissive via onBeforeCompile would be nicer; a cheap glow shell does the job
     const gg = new BufferGeometry();
@@ -34,7 +34,7 @@ export class KnotView {
     gg.setAttribute('position', new BufferAttribute(this.gpos, 3));
     gg.setAttribute('color', g.getAttribute('color'));
     gg.setIndex(g.getIndex());
-    this.glow = new Mesh(gg, new MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.12, blending: AdditiveBlending, depthWrite: false }));
+    this.glow = new Mesh(gg, new MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.07, blending: AdditiveBlending, depthWrite: false }));
     this.glow.frustumCulled = false;
     scene.add(this.mesh, this.glow);
     this.c = new Float32Array(this.m * 3);

@@ -1,6 +1,6 @@
 import {
   createSystem, Group, Vector3, Mesh, SphereGeometry, MeshBasicMaterial, TorusGeometry, Points, BufferGeometry,
-  BufferAttribute, PointsMaterial, AdditiveBlending, Color, CanvasTexture, HemisphereLight, DirectionalLight, Fog,
+  BufferAttribute, PointsMaterial, AdditiveBlending, Color, CanvasTexture, HemisphereLight, DirectionalLight, Fog, Matrix4,
 } from '@iwsdk/core';
 import { makePuzzle, ROPE_RADIUS } from './puzzle.js';
 import { LEVELS, dailySpec, KNOTS } from './braid.js';
@@ -14,7 +14,7 @@ import { store, fmt } from './store.js';
 
 const GRAB_RANGE = 0.045;
 const SOLVE_HOLD = 0.35;
-const _v = new Vector3(), _w = new Vector3();
+const _v = new Vector3(), _w = new Vector3(), _m4 = new Matrix4();
 
 export class GameSystem extends createSystem({}) {
   init() {
@@ -38,8 +38,8 @@ export class GameSystem extends createSystem({}) {
     this.hud.mesh.position.set(0, 0.235, -0.06); this.stage.add(this.hud.mesh);
     this.bar = this.ui.add(new Panel(0.3, 0.06, { bg: false }));
     this.bar.mesh.position.set(-0.25, -0.17, 0.03); this.bar.mesh.rotation.set(-0.45, 0.5, 0); this.stage.add(this.bar.mesh);
-    this.menu = this.ui.add(new Panel(0.42, 0.36));
-    this.menu.mesh.position.set(0, -0.075, -0.02); this.stage.add(this.menu.mesh);
+    this.menu = this.ui.add(new Panel(0.42, 0.4));
+    this.menu.mesh.position.set(0, -0.095, -0.02); this.stage.add(this.menu.mesh);
     this.result = this.ui.add(new Panel(0.4, 0.22));
     this.result.mesh.position.set(0, 0.29, -0.06); this.stage.add(this.result.mesh);
 
@@ -67,8 +67,8 @@ export class GameSystem extends createSystem({}) {
     const scene = this.scene;
     scene.background = new Color(0x05060c);
     scene.fog = new Fog(0x05060c, 4, 14);
-    scene.add(new HemisphereLight(0xbfd8ff, 0x201828, 1.4));
-    const key = new DirectionalLight(0xffffff, 1.6); key.position.set(0.4, 2.5, 1.2); scene.add(key);
+    scene.add(new HemisphereLight(0xbfd8ff, 0x201828, 0.7));
+    const key = new DirectionalLight(0xffffff, 1.5); key.position.set(0.4, 2.5, 1.2); scene.add(key);
     const rim = new DirectionalLight(0x88aaff, 0.8); rim.position.set(-1, 0.5, -2); scene.add(rim);
     // stars
     const n = 1400, p = new Float32Array(n * 3);
@@ -192,20 +192,21 @@ export class GameSystem extends createSystem({}) {
         { x: 0.04, y: 0.15, w: 0.34, h: 0.07, label: `Daily Knot #${d.number}`, sub: done ? `Solved in ${fmt(store.data.daily.best[this.today])} · streak ${streak}` : streak ? `Streak ${streak} · keep it going` : 'A new knot every day', accent: '#ffd36b', onPress: () => this.startPuzzle({ ...d, daily: true }) },
         { x: 0.04, y: 0.235, w: 0.16, h: 0.06, label: 'Levels', onPress: () => this.showMenu('levels') },
         { x: 0.22, y: 0.235, w: 0.16, h: 0.06, label: 'How to play', onPress: () => this.showMenu('help') },
+        ...(this.world.session ? [{ x: 0.14, y: 0.348, w: 0.14, h: 0.038, label: 'Exit VR', onPress: () => this.exitVR() }] : []),
       ]);
     } else if (page === 'levels') {
       const btns = LEVELS.map((L, i) => {
         const col = i % 2, row = Math.floor(i / 2), best = store.levelBest(i), open = store.unlocked(i);
         return { x: 0.04 + col * 0.175, y: 0.065 + row * 0.048, w: 0.165, h: 0.042, label: `${i + 1}. ${L.name}`, sub: best != null ? `best ${fmt(best)}` : open ? 'new' : 'locked', disabled: !open, onPress: () => this.startPuzzle({ ...L, index: i, seed: 1000 + i * 17 }) };
       });
-      btns.push({ x: 0.04, y: 0.315, w: 0.1, h: 0.033, label: 'Back', onPress: () => this.showMenu('main') });
+      btns.push({ x: 0.04, y: 0.35, w: 0.1, h: 0.036, label: 'Back', onPress: () => this.showMenu('main') });
       this.menu.setContent((ctx, W) => { ctx.fillStyle = '#8fe3ff'; ctx.font = '700 36px system-ui, Arial'; ctx.fillText('LEVELS', 56, 70); }, btns);
     } else {
       this.menu.setContent((ctx, W) => {
         ctx.fillStyle = '#8fe3ff'; ctx.font = '700 36px system-ui, Arial'; ctx.fillText('HOW TO PLAY', 56, 70);
         ctx.fillStyle = '#fff'; ctx.font = '500 25px system-ui, Arial';
-        ['Pinch the rope with thumb and index finger,', 'then pull, lift and slide strands around each other.', 'Strands are solid: they can’t pass through.', '', 'Some tangles are secretly a plain loop: free them', 'until, from some angle, no strand crosses another.', '', 'Others hide a real knot. Those can only be simplified.', 'Get it to its fewest crossings and we’ll name it.'].forEach((l, i) => ctx.fillText(l, 56, 130 + i * 40));
-      }, [{ x: 0.04, y: 0.31, w: 0.1, h: 0.035, label: 'Back', onPress: () => this.showMenu('main') }]);
+        ['Pinch the rope with thumb and index finger,', 'then pull, lift and slide strands around each other.', 'Strands are solid: they can’t pass through.', 'Pinch empty space and drag to turn the knot around.', 'Some tangles are secretly a plain loop: free them', 'until, from some angle, no strand crosses another.', '', 'Others hide a real knot. Those can only be simplified.', 'Get it to its fewest crossings and we’ll name it.'].forEach((l, i) => ctx.fillText(l, 56, 130 + i * 40));
+      }, [{ x: 0.04, y: 0.35, w: 0.1, h: 0.036, label: 'Back', onPress: () => this.showMenu('main') }]);
     }
   }
   showResult() {
@@ -231,18 +232,38 @@ export class GameSystem extends createSystem({}) {
   recenter() { this.placed = false; }
 
   place() {
-    const xr = this.world.renderer.xr;
-    const cam = xr.isPresenting ? xr.getCamera() : this.world.camera;
-    cam.getWorldPosition(_v);
-    const fwd = cam.getWorldDirection(_w).setY(0); if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, -1); fwd.normalize();
-    if (this.pointers.xr) {
-      this.anchor.copy(_v).addScaledVector(fwd, 0.42); this.anchor.y = _v.y - 0.13;
-      this.stage.position.copy(this.anchor);
+    const session = this.world.session;
+    if (session) {
+      // place the puzzle in front of the headset, from the real viewer pose.
+      // Right after a session starts there may be no pose yet: try again next frame.
+      const frame = this.xrFrame, ref = this.world.renderer.xr.getReferenceSpace();
+      const pose = frame && ref && frame.getViewerPose(ref);
+      if (!pose) return;
+      const m = _m4.fromArray(pose.transform.matrix).premultiply(this.world.player.matrixWorld);
+      const head = _v.setFromMatrixPosition(m);
+      const fwd = _w.set(-m.elements[8], 0, -m.elements[10]);
+      if (!Number.isFinite(head.x + head.y + head.z)) return;
+      if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, -1); fwd.normalize();
+      this.stage.position.copy(head).addScaledVector(fwd, 0.42); this.stage.position.y = head.y - 0.13;
       this.stage.rotation.set(0, Math.atan2(-fwd.x, -fwd.z), 0);
       this.placed = true;
     } else {
       this.stage.position.copy(this.anchor); this.stage.rotation.set(0, 0, 0); this.placed = true;
       this.orbit = this.orbit || { yaw: 0, pitch: 0.12, dist: 0.62 };
+    }
+  }
+
+  exitVR() { this.world.session?.end().catch(() => {}); }
+
+  // turn the whole puzzle rigidly about its centre (positions and velocities alike)
+  turnRope(yaw, pitch) {
+    const rope = this.rope, c = rope.centroid();
+    const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
+    for (const arr of [rope.p, rope.prev]) for (let i = 0; i < rope.n; i++) {
+      let x = arr[i * 3] - c[0], y = arr[i * 3 + 1] - c[1], z = arr[i * 3 + 2] - c[2];
+      [x, z] = [x * cy + z * sy, -x * sy + z * cy];
+      [y, z] = [y * cp - z * sp, y * sp + z * cp];
+      arr[i * 3] = x + c[0]; arr[i * 3 + 1] = y + c[1]; arr[i * 3 + 2] = z + c[2];
     }
   }
 
@@ -252,7 +273,13 @@ export class GameSystem extends createSystem({}) {
     if (window.KNOTWORK_CLOCK) { const c = window.KNOTWORK_CLOCK; if (!c.pending) { this.renderOnly(); return; } c.pending = false; dt = c.dt; }
     dt = Math.min(dt, 1 / 30);
     const xrNow = !!this.world.session;
-    if (xrNow !== this.wasXR) { this.wasXR = xrNow; this.placed = false; if (xrNow) this.sound.start(); }
+    if (xrNow !== this.wasXR) {
+      // entering or leaving VR: drop anything held by the old session's hands and re-place the puzzle
+      this.wasXR = xrNow; this.placed = false; this.turning = null;
+      if (this.rope) for (const id of [...this.rope.grabs.keys()]) this.rope.release(id);
+      if (xrNow) this.sound.start();
+      if (this.state === 'menu' && this.page === 'main') this.showMenu('main'); // show or hide "Exit VR"
+    }
     if (!this.placed) this.place();
     const edges = window.KNOTWORK_CLOCK ? [...this.pointers.list.values()].map(p => [p, p.pressed, p.released]) : [];
     this.pointers.update(this.xrFrame);
@@ -261,7 +288,7 @@ export class GameSystem extends createSystem({}) {
     this.ui.update(dt, this.pointers, () => this.sound.click());
     this.handView.update(this.pointers.xr ? this.pointers.hands() : []);
     // hide the SDK's own skinned hand models: we draw our own
-    if (this.pointers.xr && (this.frameNo = (this.frameNo || 0) + 1) % 30 === 0) this.world.player.traverse(o => { if (o.isSkinnedMesh) o.visible = false; });
+    if (xrNow) this.world.player.traverse(o => { if (o.isSkinnedMesh) o.visible = false; });
 
     const rope = this.rope;
     if (this.state === 'tying' || (this.state === 'menu' && this.tieFrames)) {
@@ -344,10 +371,21 @@ export class GameSystem extends createSystem({}) {
         cur.material.color.set(i >= 0 ? 0x9fe8ff : 0x506070);
         if (i >= 0 && ri < 2) ringI[ri++] = i;
         if (p.pressed && i >= 0 && !this.uiNear(p)) this.grabNode(p.id, i, local);
+        // pinch in empty space and drag: turn the whole knot to look at it from any side
+        else if (p.pressed && i < 0 && !this.turning && !rope.grabs.size && !this.uiNear(p)) { this.turning = { id: p.id, last: local }; this.sound.click(); }
+        if (this.turning && this.turning.id === p.id) {
+          if (!p.down || rope.grabs.size) this.turning = null;
+          else {
+            const l = this.turning.last, K = 7; // radians per metre of hand travel
+            this.turnRope((local[0] - l[0]) * K, -(local[1] - l[1]) * K);
+            this.turning.last = local; cur.material.color.set(0xffd36b);
+          }
+        }
       }
       if (p.released && g) { rope.release(p.id); this.sound.release(); }
     }
     for (const [id, c] of this.cursors) if (!items.find(p => p.id === id)) c.visible = false;
+    if (this.turning && !items.find(p => p.id === this.turning.id)) this.turning = null;
     // mouse (browser preview)
     if (!ptrs.xr) {
       const m = ptrs.mouse;
@@ -381,7 +419,7 @@ export class GameSystem extends createSystem({}) {
     if (!this.started) { this.started = true; this.showHud(); }
   }
   uiNear(p) {
-    for (const panel of [this.bar]) { if (!panel.mesh.visible) continue; const q = panel.local(p.pos); if (Math.abs(q.z) < 0.05 && panel.hit(q.x, q.y)) return true; }
+    for (const panel of [this.bar, this.menu, this.result]) { if (!panel.mesh.visible) continue; const q = panel.local(p.pos); if (Math.abs(q.z) < 0.05 && panel.hit(q.x, q.y)) return true; }
     return false;
   }
   cursor(id) {
