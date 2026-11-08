@@ -26,25 +26,21 @@ const { chromium } = require('playwright');
     };
     const pinch = async v => { await d.remote.dispatch('set_select_value', { device: 'hand-right', value: v }); await wait(3); };
     const out = {};
-    // --- turning: start a level, then pinch empty space beside the knot and drag
+    // --- bar buttons: turn, tilt and zoom move the pivot, not the rope
     k.startPuzzle({ strands: 3, conj: 1, name: 'T', index: 2, seed: 1034 });
     for (let i = 0; i < 400 && k.state !== 'play'; i++) await raf();
-    await d.remote.dispatch('set_transform', { device: 'hand-left', position: { x: -0.6, y: 0.8, z: 0.3 }, anchor: 'grasp' });
-    const c0 = k.rope.centroid(), a0 = Array.from(k.rope.p.slice(0, 3));
-    const sp = k.stage.localToWorld(new k.stage.position.constructor(0.17, 0, 0.05));
-    await handTo(sp.x, sp.y, sp.z); await pinch(1);
-    out.turningStarted = !!k.turning;
-    for (let s = 1; s <= 10; s++) { const q = k.stage.localToWorld(new k.stage.position.constructor(0.17 + s * 0.012, 0, 0.05)); await handTo(q.x, q.y, q.z); }
-    await pinch(0);
-    const a1 = Array.from(k.rope.p.slice(0, 3));
-    out.nodeMoved = +Math.hypot(a1[0] - a0[0], a1[2] - a0[2]).toFixed(3);
-    out.grabbedDuringTurn = k.rope.grabs.size;
-    out.turningAfter = !!k.turning;
-    // --- exit VR from the main menu
-    k.toMenu(); await wait(40);
-    const b = k.menu.buttons.find(b => b.label === 'Exit VR');
-    out.exitButton = !!b;
-    b.onPress(); await new Promise(r => setTimeout(r, 800));
+    const press = label => { const b = k.bar.buttons.find(b => (b.label || b.icon) === label); b.onPress(); return !!b; };
+    const p0 = Array.from(k.rope.p.slice(0, 3));
+    press('right'); press('down'); press('+'); press('+');
+    await wait(60);
+    out.rotDeg = +(2 * Math.acos(Math.min(1, Math.abs(k.pivot.quaternion.w))) * 180 / Math.PI).toFixed(1);
+    out.scale = +k.pivot.scale.x.toFixed(2);
+    out.ropeUnmoved = Math.hypot(...Array.from(k.rope.p.slice(0, 3)).map((v, i) => v - p0[i])) < 0.02;
+    out.barLabels = k.bar.buttons.map(b => b.label || b.icon).join(',');
+    out.menuHasExit = (k.toMenu(), k.menu.buttons.some(b => b.label === 'Exit VR'));
+    k.startPuzzle({ strands: 2, conj: 0, name: 'T', index: 0, seed: 1000 });
+    out.scaleKeptRotReset = [+k.pivot.scale.x.toFixed(2), +k.pivot.quaternion.w.toFixed(2)];
+    k.bar.buttons.find(b => b.label === 'Exit VR').onPress(); await new Promise(r => setTimeout(r, 800));
     out.sessionAfterExit = !!window.world.session;
     return out;
   });

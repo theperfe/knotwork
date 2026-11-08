@@ -23,6 +23,15 @@ const { chromium } = require('playwright');
     await page.waitForTimeout(800);
     await page.screenshot({ path: `${out}-${round}-out.png` });
   }
+  // walk into the puzzle: it should move back to arm's length after a moment
+  await page.click('#enter', { force: true });
+  await page.waitForFunction(() => !!window.world.session, null, { timeout: 15000 });
+  await page.waitForTimeout(1200);
+  const before = await page.evaluate(() => window.knotwork.stage.position.toArray());
+  await page.evaluate(() => { const d = window.IWER_DEVICE, k = window.knotwork; d.position.set(k.stage.position.x, 1.25, k.stage.position.z + 0.05); });
+  await page.waitForTimeout(2500);
+  const after = await page.evaluate(() => { const k = window.knotwork, s = k.stage.position, h = window.world.renderer.xr.getCamera().getWorldPosition(s.clone()); return Math.hypot(s.x - h.x, s.z - h.z); });
+  console.log('[test] walked in from z', before[2].toFixed(2), '-> puzzle now', after.toFixed(2), 'm away');
   console.log('[test] errors', errs);
   await browser.close();
 })();
