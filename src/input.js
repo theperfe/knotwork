@@ -33,6 +33,8 @@ export class Pointers {
   update(frame) {
     for (const p of this.list.values()) { p.pressed = p.released = false; p.tracked = false; }
     const world = this.world, session = world.session;
+    // a new XR session: forget everything from the old one (stale joint spaces, held pinches)
+    if (session !== this.session) { this.session = session; for (const [id, p] of this.list) if (id !== 'mouse') this.list.delete(id); }
     this.xr = !!(session && frame);
     if (this.xr) {
       const ref = world.renderer.xr.getReferenceSpace();
@@ -42,15 +44,19 @@ export class Pointers {
         if (src.hand) {
           const tj = src.hand.get('thumb-tip'), ij = src.hand.get('index-finger-tip');
           const tp = tj && frame.getJointPose(tj, ref), ip = ij && frame.getJointPose(ij, ref);
-          if (!tp || !ip) continue;
+          if (!tp || !ip) continue; // not tracked this frame: the hand is hidden, not frozen
           const p = this.get(side); p.kind = 'hand'; p.tracked = true;
           // all 25 joints, for the stylised hand renderer
-          if (!p.joints) { p.joints = new Float32Array(25 * 3); p.radii = new Float32Array(25); p.poses = new Float32Array(25 * 16); p.spaces = [...src.hand.values()]; }
-          if (frame.fillPoses && frame.fillPoses(p.spaces, ref, p.poses)) {
+          if (!p.joints) { p.joints = new Float32Array(25 * 3); p.radii = new Float32Array(25); p.poses = new Float32Array(25 * 16); }
+          // a hand that loses tracking comes back as a new input source with new
+          // joint spaces: re-read them, or the drawn hand freezes at its old pose
+          if (p.hand !== src.hand) { p.hand = src.hand; p.spaces = [...src.hand.values()]; }
+          let filled = false; try { filled = !!(frame.fillPoses && frame.fillPoses(p.spaces, ref, p.poses)); } catch (e) { filled = false; }
+          if (filled) {
             for (let j = 0; j < 25; j++) { _v.set(p.poses[j * 16 + 12], p.poses[j * 16 + 13], p.poses[j * 16 + 14]).applyMatrix4(origin); p.joints.set([_v.x, _v.y, _v.z], j * 3); }
             if (frame.fillJointRadii) frame.fillJointRadii(p.spaces, p.radii);
           } else {
-            p.spaces.forEach((sp, j) => { const jp = frame.getJointPose(sp, ref); if (jp) { _v.set(jp.transform.position.x, jp.transform.position.y, jp.transform.position.z).applyMatrix4(origin); p.joints.set([_v.x, _v.y, _v.z], j * 3); p.radii[j] = jp.radius || 0.008; } });
+            p.spaces.forEach((sp, j) => { let jp = null; try { jp = frame.getJointPose(sp, ref); } catch (e) {} if (jp) { _v.set(jp.transform.position.x, jp.transform.position.y, jp.transform.position.z).applyMatrix4(origin); p.joints.set([_v.x, _v.y, _v.z], j * 3); p.radii[j] = jp.radius || 0.008; } });
           }
           const t = new Vector3(tp.transform.position.x, tp.transform.position.y, tp.transform.position.z).applyMatrix4(origin);
           p.tip.set(ip.transform.position.x, ip.transform.position.y, ip.transform.position.z).applyMatrix4(origin);
