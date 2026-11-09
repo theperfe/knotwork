@@ -1,20 +1,24 @@
 import {
   createSystem, Group, Vector3, Mesh, SphereGeometry, MeshBasicMaterial, TorusGeometry, Points, BufferGeometry,
-  BufferAttribute, PointsMaterial, AdditiveBlending, Color, CanvasTexture, HemisphereLight, DirectionalLight, Fog, Matrix4,
+  BufferAttribute, PointsMaterial, AdditiveBlending, Color, CanvasTexture, HemisphereLight, DirectionalLight, Fog, Matrix4, Quaternion,
 } from '@iwsdk/core';
 import { makePuzzle, ROPE_RADIUS } from './puzzle.js';
 import { LEVELS, dailySpec, KNOTS } from './braid.js';
 import { TangleTracker, crossings } from './topology.js';
 import { KnotView } from './knotview.js';
 import { Pointers, rayToPlane } from './input.js';
-import { Panel, UIInput, fitText } from './ui.js';
+import { Panel, UIInput, fitText, wrapText } from './ui.js';
 import { Sound } from './audio.js';
 import { HandView } from './handview.js';
 import { store, fmt } from './store.js';
 
 const GRAB_RANGE = 0.045;
+const PLACE_DIST = 0.5, PLACE_DROP = 0.16; // puzzle distance in front of the eyes, and how far below them
+const ZOOMS = [0.6, 0.8, 1, 1.25, 1.5, 1.8]; // capped so a zoomed knot still clears your face and the buttons
+const TURN = Math.PI / 6; // 30 degrees per tap
 const SOLVE_HOLD = 0.35;
-const _v = new Vector3(), _w = new Vector3(), _m4 = new Matrix4();
+const _v = new Vector3(), _w = new Vector3(), _m4 = new Matrix4(), _q = new Quaternion();
+const AX_Y = new Vector3(0, 1, 0), AX_X = new Vector3(1, 0, 0);
 
 export class GameSystem extends createSystem({}) {
   init() {
@@ -25,6 +29,10 @@ export class GameSystem extends createSystem({}) {
     this.pointers = new Pointers(world);
     this.ui = new UIInput();
     this.stage = new Group(); this.scene.add(this.stage);
+    // the knot lives in its own pivot so it can be turned and zoomed without moving the panels;
+    // hands are mapped into pivot space, so the physics never notices
+    this.pivot = new Group(); this.stage.add(this.pivot);
+    this.zoomI = 2; this.turnTarget = new Quaternion();
     this.buildEnvironment();
     this.handView = new HandView(this.scene);
     this.anchor = new Vector3(0, 1.18, -0.42);
@@ -36,8 +44,8 @@ export class GameSystem extends createSystem({}) {
     // panels
     this.hud = this.ui.add(new Panel(0.34, 0.085));
     this.hud.mesh.position.set(0, 0.235, -0.06); this.stage.add(this.hud.mesh);
-    this.bar = this.ui.add(new Panel(0.3, 0.06, { bg: false }));
-    this.bar.mesh.position.set(-0.25, -0.17, 0.03); this.bar.mesh.rotation.set(-0.45, 0.5, 0); this.stage.add(this.bar.mesh);
+    this.bar = this.ui.add(new Panel(0.44, 0.135, { bg: false }));
+    this.bar.mesh.position.set(0, -0.23, 0.08); this.bar.mesh.rotation.set(-0.75, 0, 0); this.bar.mesh.visible = false; this.stage.add(this.bar.mesh);
     this.menu = this.ui.add(new Panel(0.42, 0.4));
     this.menu.mesh.position.set(0, -0.095, -0.02); this.stage.add(this.menu.mesh);
     this.result = this.ui.add(new Panel(0.4, 0.22));
@@ -46,15 +54,15 @@ export class GameSystem extends createSystem({}) {
     // pinch cursors + grab target ring
     this.cursors = new Map();
     this.ring = new Mesh(new TorusGeometry(ROPE_RADIUS * 2.4, 0.0016, 6, 24), new MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.0, depthTest: false }));
-    this.ring.renderOrder = 20; this.stage.add(this.ring);
-    this.ring2 = this.ring.clone(); this.ring2.material = this.ring.material.clone(); this.stage.add(this.ring2);
+    this.ring.renderOrder = 20; this.pivot.add(this.ring);
+    this.ring2 = this.ring.clone(); this.ring2.material = this.ring.material.clone(); this.pivot.add(this.ring2);
 
     // solve burst
     const N = 420; this.burstVel = new Float32Array(N * 3);
     const bg = new BufferGeometry(); bg.setAttribute('position', new BufferAttribute(new Float32Array(N * 3), 3));
     const dot = document.createElement('canvas'); dot.width = dot.height = 32; { const g = dot.getContext('2d'), r = g.createRadialGradient(16, 16, 0, 16, 16, 16); r.addColorStop(0, 'rgba(255,255,255,1)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 32, 32); }
     this.burst = new Points(bg, new PointsMaterial({ map: new CanvasTexture(dot), color: 0xffe08a, size: 0.004, transparent: true, opacity: 0, blending: AdditiveBlending, depthWrite: false }));
-    this.burst.frustumCulled = false; this.stage.add(this.burst);
+    this.burst.frustumCulled = false; this.pivot.add(this.burst);
 
     this.showMenu();
     this.startPuzzle({ ...this.daily, daily: true }, { preview: true });
@@ -88,7 +96,8 @@ export class GameSystem extends createSystem({}) {
     const { rope, crossings: c0, frames, target } = makePuzzle(spec, { record: true });
     this.rope = rope; this.c0 = Math.max(1, c0); this.target = target ? target + 1 : 1; /* a 1-crossing diagram is always an unknot */ this.trueCrossings = target; this.knot = KNOTS[spec.knot || 'unknot']; this.tieFrames = frames; this.finalP = rope.p.slice();
     if (this.view) this.view.dispose();
-    this.view = new KnotView(this.stage, rope.n, rope.r);
+    this.view = new KnotView(this.pivot, rope.n, rope.r);
+    this.turnTarget.identity(); this.pivot.quaternion.identity(); // each puzzle starts facing you
     this.view.mesh.position.set(0, 0, 0);
     this.held = new Float32Array(rope.n);
     this.tracker = new TangleTracker();
@@ -168,18 +177,34 @@ export class GameSystem extends createSystem({}) {
   }
   showBar() {
     this.bar.mesh.visible = true;
-    this.bar.setContent(null, [
-      { x: 0.0, y: 0.005, w: 0.09, h: 0.05, label: 'Menu', onPress: () => this.toMenu() },
-      { x: 0.1, y: 0.005, w: 0.09, h: 0.05, label: 'Retie', onPress: () => this.startPuzzle({ ...this.spec }) },
-      { x: 0.2, y: 0.005, w: 0.09, h: 0.05, label: 'Center', onPress: () => this.recenter() },
-    ]);
+    const W = 0.1, G = 0.012, w = 0.062, g = (0.432 - 6 * w) / 5, x0 = 0.004; // inset so outlines aren't clipped
+    const row1 = [
+      { label: 'Menu', onPress: () => this.toMenu() },
+      { label: 'Retie', onPress: () => this.startPuzzle({ ...this.spec }) },
+      { label: 'Center', onPress: () => this.recenter() },
+      ...(this.world.session ? [{ label: 'Exit VR', onPress: () => this.exitVR() }] : []),
+    ].map((b, i) => ({ ...b, x: x0 + i * (W + G), y: 0.004, w: W, h: 0.048 }));
+    const row2 = [
+      { icon: 'left', onPress: () => this.turn(-TURN, 0) },
+      { icon: 'right', onPress: () => this.turn(TURN, 0) },
+      { icon: 'up', onPress: () => this.turn(0, -TURN) },
+      { icon: 'down', onPress: () => this.turn(0, TURN) },
+      { label: '−', onPress: () => this.zoomBy(-1) },
+      { label: '+', onPress: () => this.zoomBy(1) },
+    ].map((b, i) => ({ ...b, x: x0 + i * (w + g), y: 0.064, w, h: 0.048 }));
+    this.bar.setContent((ctx, W2, H2, PX) => {
+      ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = '500 20px system-ui, Arial'; ctx.textAlign = 'center';
+      // each caption sits centred under its pair of buttons
+      ctx.fillText('turn', (x0 + w + g / 2) * PX, 0.127 * PX); ctx.fillText('tilt', (x0 + 3 * w + 2.5 * g) * PX, 0.127 * PX); ctx.fillText('zoom', (x0 + 5 * w + 4.5 * g) * PX, 0.127 * PX);
+      ctx.textAlign = 'left';
+    }, [...row1, ...row2]);
   }
   toMenu() {
     this.result.mesh.visible = false; this.hud.mesh.visible = false; this.bar.mesh.visible = false;
     this.showMenu(); this.startPuzzle({ ...this.daily, daily: true }, { preview: true });
   }
   showMenu(page = 'main') {
-    this.menu.mesh.visible = true; this.page = page;
+    this.menu.mesh.visible = true; this.bar.mesh.visible = false; this.page = page;
     const d = this.daily, done = store.dailyDone(this.today), streak = store.streak(this.today);
     if (page === 'main') {
       this.menu.setContent((ctx, W) => {
@@ -192,7 +217,6 @@ export class GameSystem extends createSystem({}) {
         { x: 0.04, y: 0.15, w: 0.34, h: 0.07, label: `Daily Knot #${d.number}`, sub: done ? `Solved in ${fmt(store.data.daily.best[this.today])} · streak ${streak}` : streak ? `Streak ${streak} · keep it going` : 'A new knot every day', accent: '#ffd36b', onPress: () => this.startPuzzle({ ...d, daily: true }) },
         { x: 0.04, y: 0.235, w: 0.16, h: 0.06, label: 'Levels', onPress: () => this.showMenu('levels') },
         { x: 0.22, y: 0.235, w: 0.16, h: 0.06, label: 'How to play', onPress: () => this.showMenu('help') },
-        ...(this.world.session ? [{ x: 0.14, y: 0.348, w: 0.14, h: 0.038, label: 'Exit VR', onPress: () => this.exitVR() }] : []),
       ]);
     } else if (page === 'levels') {
       const btns = LEVELS.map((L, i) => {
@@ -204,8 +228,11 @@ export class GameSystem extends createSystem({}) {
     } else {
       this.menu.setContent((ctx, W) => {
         ctx.fillStyle = '#8fe3ff'; ctx.font = '700 36px system-ui, Arial'; ctx.fillText('HOW TO PLAY', 56, 70);
-        ctx.fillStyle = '#fff'; ctx.font = '500 25px system-ui, Arial';
-        ['Pinch the rope with thumb and index finger,', 'then pull, lift and slide strands around each other.', 'Strands are solid: they can’t pass through.', 'Pinch empty space and drag to turn the knot around.', 'Some tangles are secretly a plain loop: free them', 'until, from some angle, no strand crosses another.', '', 'Others hide a real knot. Those can only be simplified.', 'Get it to its fewest crossings and we’ll name it.'].forEach((l, i) => ctx.fillText(l, 56, 130 + i * 40));
+        ctx.fillStyle = '#fff'; ctx.font = '500 23px system-ui, Arial';
+        let y = 118;
+        for (const para of ['Pinch the rope with thumb and index finger, then pull, lift and slide strands around each other. Strands are solid: they can’t pass through.', 'Use the arrow buttons under the knot to turn or tilt it, and − / + to zoom.', 'Some tangles are secretly a plain loop: free them until, from some angle, no strand crosses another.', 'Others hide a real knot. Those can only be simplified: get it to its fewest crossings and we’ll name it.']) {
+          y = wrapText(ctx, para, 56, y, W - 112, 30) + 12;
+        }
       }, [{ x: 0.04, y: 0.35, w: 0.1, h: 0.036, label: 'Back', onPress: () => this.showMenu('main') }]);
     }
   }
@@ -238,33 +265,42 @@ export class GameSystem extends createSystem({}) {
       // Right after a session starts there may be no pose yet: try again next frame.
       const frame = this.xrFrame, ref = this.world.renderer.xr.getReferenceSpace();
       const pose = frame && ref && frame.getViewerPose(ref);
-      if (!pose) return;
+      // the first poses after (re-)entering VR can be stale or not yet tracked, which put the
+      // puzzle right in your face: wait a moment for real head tracking before placing it
+      const waited = performance.now() - (this.xrSince || 0);
+      if (!pose || waited < 450 || (pose.emulatedPosition && waited < 2500)) { this.stage.visible = false; return; }
       const m = _m4.fromArray(pose.transform.matrix).premultiply(this.world.player.matrixWorld);
       const head = _v.setFromMatrixPosition(m);
       const fwd = _w.set(-m.elements[8], 0, -m.elements[10]);
       if (!Number.isFinite(head.x + head.y + head.z)) return;
       if (fwd.lengthSq() < 1e-4) fwd.set(0, 0, -1); fwd.normalize();
-      this.stage.position.copy(head).addScaledVector(fwd, 0.42); this.stage.position.y = head.y - 0.13;
+      this.stage.position.copy(head).addScaledVector(fwd, PLACE_DIST); this.stage.position.y = head.y - PLACE_DROP;
       this.stage.rotation.set(0, Math.atan2(-fwd.x, -fwd.z), 0);
-      this.placed = true;
+      this.placed = true; this.stage.visible = true;
     } else {
-      this.stage.position.copy(this.anchor); this.stage.rotation.set(0, 0, 0); this.placed = true;
+      this.stage.position.copy(this.anchor); this.stage.rotation.set(0, 0, 0); this.placed = true; this.stage.visible = true;
       this.orbit = this.orbit || { yaw: 0, pitch: 0.12, dist: 0.62 };
     }
   }
 
   exitVR() { this.world.session?.end().catch(() => {}); }
 
-  // turn the whole puzzle rigidly about its centre (positions and velocities alike)
-  turnRope(yaw, pitch) {
-    const rope = this.rope, c = rope.centroid();
-    const cy = Math.cos(yaw), sy = Math.sin(yaw), cp = Math.cos(pitch), sp = Math.sin(pitch);
-    for (const arr of [rope.p, rope.prev]) for (let i = 0; i < rope.n; i++) {
-      let x = arr[i * 3] - c[0], y = arr[i * 3 + 1] - c[1], z = arr[i * 3 + 2] - c[2];
-      [x, z] = [x * cy + z * sy, -x * sy + z * cy];
-      [y, z] = [y * cp - z * sp, y * sp + z * cp];
-      arr[i * 3] = x + c[0]; arr[i * 3 + 1] = y + c[1]; arr[i * 3 + 2] = z + c[2];
-    }
+  // turn the knot by a step, about the stage's own up axis (yaw) or side axis (tilt)
+  turn(yaw, tilt) {
+    if (yaw) this.turnTarget.premultiply(_q.setFromAxisAngle(AX_Y, yaw));
+    if (tilt) this.turnTarget.premultiply(_q.setFromAxisAngle(AX_X, tilt));
+  }
+  zoomBy(d) { this.zoomI = Math.max(0, Math.min(ZOOMS.length - 1, this.zoomI + d)); }
+
+  // if your head ends up inside or right next to the puzzle (leaning in, stepping forward,
+  // a bad first pose), quietly put it back at arm's length once you let go
+  keepComfortable(dt) {
+    if (!this.world.session || !this.placed) return;
+    const head = this.world.renderer.xr.getCamera().getWorldPosition(_v);
+    const d = Math.hypot(head.x - this.stage.position.x, head.z - this.stage.position.z);
+    const near = d < 0.22 && Math.abs(head.y - this.stage.position.y) < 0.4 && !this.rope.grabs.size;
+    this.tooClose = near ? (this.tooClose || 0) + dt : 0;
+    if (this.tooClose > 0.8) { this.tooClose = 0; this.placed = false; this.xrSince = 0; }
   }
 
   // ---------- frame ----------
@@ -275,10 +311,10 @@ export class GameSystem extends createSystem({}) {
     const xrNow = !!this.world.session;
     if (xrNow !== this.wasXR) {
       // entering or leaving VR: drop anything held by the old session's hands and re-place the puzzle
-      this.wasXR = xrNow; this.placed = false; this.turning = null;
+      this.wasXR = xrNow; this.placed = false; this.xrSince = performance.now();
       if (this.rope) for (const id of [...this.rope.grabs.keys()]) this.rope.release(id);
       if (xrNow) this.sound.start();
-      if (this.state === 'menu' && this.page === 'main') this.showMenu('main'); // show or hide "Exit VR"
+      if (this.bar.mesh.visible) this.showBar(); // show or hide "Exit VR"
     }
     if (!this.placed) this.place();
     const edges = window.KNOTWORK_CLOCK ? [...this.pointers.list.values()].map(p => [p, p.pressed, p.released]) : [];
@@ -339,6 +375,11 @@ export class GameSystem extends createSystem({}) {
     // edges have been consumed by this update
     if (window.KNOTWORK_CLOCK) for (const p of this.pointers.list.values()) p.pressed = p.released = false;
     const showMenuKnot = this.state === 'menu';
+    // ease the pivot towards the chosen zoom and turn (the menu always shows it plain)
+    const k = 1 - Math.exp(-dt * 10), zs = showMenuKnot ? 1 : ZOOMS[this.zoomI];
+    this.pivot.scale.setScalar(this.pivot.scale.x + (zs - this.pivot.scale.x) * k);
+    this.pivot.quaternion.slerp(showMenuKnot ? _q.identity() : this.turnTarget, k);
+    this.keepComfortable(dt);
     if (showMenuKnot) { this.view.mesh.position.set(0, 0.2, -0.12); this.view.glow.position.copy(this.view.mesh.position); }
     else { this.view.mesh.position.set(0, 0, 0); this.view.glow.position.set(0, 0, 0); }
   }
@@ -357,35 +398,24 @@ export class GameSystem extends createSystem({}) {
     const items = ptrs.xr ? ptrs.hands() : [];
     let ringI = [-1, -1], ri = 0;
     for (const p of items) {
-      const local = this.stage.worldToLocal(_v.copy(p.pos)).toArray();
+      const local = this.pivot.worldToLocal(_v.copy(p.pos)).toArray();
       const cur = this.cursor(p.id); cur.visible = true; cur.position.fromArray(local);
       const g = rope.grabs.get(p.id);
       if (g) {
         rope.moveGrab(p.id, local); cur.material.color.set(0xffffff);
         // the rope can't stretch: if the hand gets far ahead of a taut strand, it slips out
         const o = g.i * 3, gap = Math.hypot(rope.p[o] - local[0], rope.p[o + 1] - local[1], rope.p[o + 2] - local[2]);
-        if (gap > 0.09) { rope.release(p.id); this.sound.release(); continue; }
+        if (gap > 0.09 / this.pivot.scale.x) { rope.release(p.id); this.sound.release(); continue; }
       }
       else {
-        const i = rope.nearest(local, GRAB_RANGE);
+        const i = rope.nearest(local, GRAB_RANGE / this.pivot.scale.x);
         cur.material.color.set(i >= 0 ? 0x9fe8ff : 0x506070);
         if (i >= 0 && ri < 2) ringI[ri++] = i;
         if (p.pressed && i >= 0 && !this.uiNear(p)) this.grabNode(p.id, i, local);
-        // pinch in empty space and drag: turn the whole knot to look at it from any side
-        else if (p.pressed && i < 0 && !this.turning && !rope.grabs.size && !this.uiNear(p)) { this.turning = { id: p.id, last: local }; this.sound.click(); }
-        if (this.turning && this.turning.id === p.id) {
-          if (!p.down || rope.grabs.size) this.turning = null;
-          else {
-            const l = this.turning.last, K = 7; // radians per metre of hand travel
-            this.turnRope((local[0] - l[0]) * K, -(local[1] - l[1]) * K);
-            this.turning.last = local; cur.material.color.set(0xffd36b);
-          }
-        }
       }
       if (p.released && g) { rope.release(p.id); this.sound.release(); }
     }
     for (const [id, c] of this.cursors) if (!items.find(p => p.id === id)) c.visible = false;
-    if (this.turning && !items.find(p => p.id === this.turning.id)) this.turning = null;
     // mouse (browser preview)
     if (!ptrs.xr) {
       const m = ptrs.mouse;
@@ -393,24 +423,24 @@ export class GameSystem extends createSystem({}) {
         // nearest node to the mouse ray
         const ray = ptrs.ray.ray; let best = -1, bd = 0.02 * 0.02;
         for (let i = 0; i < rope.n; i++) {
-          _v.fromArray(rope.p, i * 3); this.stage.localToWorld(_v);
+          _v.fromArray(rope.p, i * 3); this.pivot.localToWorld(_v);
           const d = ray.distanceSqToPoint(_v); if (d < bd) { bd = d; best = i; }
         }
-        if (best >= 0) { _v.fromArray(rope.p, best * 3); this.grabNode('mouse', best, _v.toArray()); this.mouseDepthPoint = this.stage.localToWorld(_v.clone()); }
+        if (best >= 0) { _v.fromArray(rope.p, best * 3); this.grabNode('mouse', best, _v.toArray()); this.mouseDepthPoint = this.pivot.localToWorld(_v.clone()); }
       }
       if (rope.grabs.has('mouse')) {
         if (!m.down) { rope.release('mouse'); this.sound.release(); }
         else {
           if (m.wheelNow) this.mouseDepthPoint.addScaledVector(this.world.camera.getWorldDirection(_w), -m.wheelNow * 0.0004);
           const wp = rayToPlane(ptrs.ray, this.world.camera, this.mouseDepthPoint, new Vector3());
-          rope.moveGrab('mouse', this.stage.worldToLocal(wp).toArray());
+          rope.moveGrab('mouse', this.pivot.worldToLocal(wp).toArray());
         }
       }
       ptrs.mouse.consumed = false;
     }
     [this.ring, this.ring2].forEach((r, k) => {
       const i = ringI[k]; r.material.opacity = i >= 0 ? 0.8 : 0;
-      if (i >= 0) { r.position.fromArray(rope.p, i * 3); r.lookAt(this.stage.worldToLocal(this.world.camera.getWorldPosition(_w))); }
+      if (i >= 0) { r.position.fromArray(rope.p, i * 3); r.lookAt(this.world.camera.getWorldPosition(_w)); }
     });
   }
   grabNode(id, i, target) {
@@ -424,7 +454,7 @@ export class GameSystem extends createSystem({}) {
   }
   cursor(id) {
     let c = this.cursors.get(id);
-    if (!c) { c = new Mesh(new SphereGeometry(0.0045, 12, 8), new MeshBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.85, depthTest: false })); c.renderOrder = 21; this.stage.add(c); this.cursors.set(id, c); }
+    if (!c) { c = new Mesh(new SphereGeometry(0.0045, 12, 8), new MeshBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.85, depthTest: false })); c.renderOrder = 21; this.pivot.add(c); this.cursors.set(id, c); }
     return c;
   }
   updateDesktopCamera() {

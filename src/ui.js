@@ -18,6 +18,17 @@ export function fitText(ctx, text, x, y, maxW, size, weight = 700) {
   ctx.fillText(text, x, y);
 }
 
+// draw text word-wrapped to maxW; returns the y below the last line
+export function wrapText(ctx, text, x, y, maxW, lineH) {
+  let line = '';
+  for (const word of text.split(' ')) {
+    const t = line ? line + ' ' + word : word;
+    if (ctx.measureText(t).width > maxW && line) { ctx.fillText(line, x, y); y += lineH; line = word; } else line = t;
+  }
+  if (line) { ctx.fillText(line, x, y); y += lineH; }
+  return y;
+}
+
 export class Panel {
   constructor(w, h, { bg = true } = {}) {
     this.w = w; this.h = h; this.bg = bg;
@@ -50,7 +61,13 @@ export class Panel {
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       const fs = Math.min(h * 0.38, 46);
       ctx.font = `700 ${fs}px system-ui, Arial`;
-      ctx.fillText(b.label, x + w / 2, y + h / 2 - (b.sub ? fs * 0.38 : 0));
+      if (b.icon) {
+        // arrow drawn as a shape, so it never depends on the headset's fonts
+        const cx = x + w / 2, cy = y + h / 2, r = Math.min(w, h) * 0.24, a = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 }[b.icon];
+        ctx.beginPath();
+        for (let k = 0; k < 3; k++) { const t = a + k * Math.PI * 2 / 3; ctx[k ? 'lineTo' : 'moveTo'](cx + Math.cos(t) * r, cy + Math.sin(t) * r); }
+        ctx.closePath(); ctx.fill();
+      } else ctx.fillText(b.label, x + w / 2, y + h / 2 - (b.sub ? fs * 0.38 : 0));
       if (b.sub) { ctx.font = `500 ${fs * 0.58}px system-ui, Arial`; ctx.globalAlpha = 0.75; ctx.fillText(b.sub, x + w / 2, y + h / 2 + fs * 0.55); ctx.globalAlpha = 1; }
       ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
     }
@@ -71,7 +88,8 @@ export class UIInput {
   update(dt, pointers, onPress) {
     this.cool -= dt;
     const hovers = new Map();
-    const visible = [...this.panels].filter(p => p.mesh.visible && p.mesh.parent && p.buttons.length);
+    // a panel only takes input if it and its parent are shown (the stage hides while VR starts up)
+    const visible = [...this.panels].filter(p => p.mesh.visible && p.mesh.parent && p.mesh.parent.visible && p.buttons.length);
     for (const ptr of pointers.hands()) {
       for (const panel of visible) {
         const t = panel.local(ptr.tip), q = panel.local(ptr.pos);

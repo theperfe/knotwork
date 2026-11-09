@@ -19,6 +19,10 @@ const world = await World.create(container, {
   render: { fov: 60, near: 0.01, far: 60, camera: { position: [0, 1.3, 0.2] } },
   features: { spatialUI: false, grabbing: false, locomotion: false },
 });
+// sharper image in the headset: render a bit above the default resolution and keep
+// fixed foveation low (three.js defaults to maximum, which blurs everything off-centre)
+world.renderer.xr.setFramebufferScaleFactor(1.25);
+world.renderer.xr.setFoveation(0.25);
 world.registerSystem(GameSystem);
 window.world = world;
 
