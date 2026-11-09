@@ -14,7 +14,7 @@ import { store, fmt } from './store.js';
 
 const GRAB_RANGE = 0.045;
 const PLACE_DIST = 0.5, PLACE_DROP = 0.16; // puzzle distance in front of the eyes, and how far below them
-const ZOOMS = [0.6, 0.75, 1, 1.3, 1.7, 2.2];
+const ZOOMS = [0.6, 0.8, 1, 1.25, 1.5, 1.8]; // capped so a zoomed knot still clears your face and the buttons
 const TURN = Math.PI / 6; // 30 degrees per tap
 const SOLVE_HOLD = 0.35;
 const _v = new Vector3(), _w = new Vector3(), _m4 = new Matrix4(), _q = new Quaternion();
@@ -177,13 +177,13 @@ export class GameSystem extends createSystem({}) {
   }
   showBar() {
     this.bar.mesh.visible = true;
-    const W = 0.1, G = 0.012, w = 0.062, g = (0.44 - 6 * w) / 5;
+    const W = 0.1, G = 0.012, w = 0.062, g = (0.432 - 6 * w) / 5, x0 = 0.004; // inset so outlines aren't clipped
     const row1 = [
       { label: 'Menu', onPress: () => this.toMenu() },
       { label: 'Retie', onPress: () => this.startPuzzle({ ...this.spec }) },
       { label: 'Center', onPress: () => this.recenter() },
       ...(this.world.session ? [{ label: 'Exit VR', onPress: () => this.exitVR() }] : []),
-    ].map((b, i) => ({ ...b, x: i * (W + G), y: 0.004, w: W, h: 0.048 }));
+    ].map((b, i) => ({ ...b, x: x0 + i * (W + G), y: 0.004, w: W, h: 0.048 }));
     const row2 = [
       { icon: 'left', onPress: () => this.turn(-TURN, 0) },
       { icon: 'right', onPress: () => this.turn(TURN, 0) },
@@ -191,10 +191,11 @@ export class GameSystem extends createSystem({}) {
       { icon: 'down', onPress: () => this.turn(0, TURN) },
       { label: '−', onPress: () => this.zoomBy(-1) },
       { label: '+', onPress: () => this.zoomBy(1) },
-    ].map((b, i) => ({ ...b, x: i * (w + g), y: 0.064, w, h: 0.048 }));
+    ].map((b, i) => ({ ...b, x: x0 + i * (w + g), y: 0.064, w, h: 0.048 }));
     this.bar.setContent((ctx, W2, H2, PX) => {
       ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = '500 20px system-ui, Arial'; ctx.textAlign = 'center';
-      ctx.fillText('turn', (2 * w + g) * PX, 0.126 * PX); ctx.fillText('tilt', (4 * w + 3 * g) * PX, 0.126 * PX); ctx.fillText('zoom', (6 * w + 5 * g) * PX + 0.2 * g * PX, 0.126 * PX);
+      // each caption sits centred under its pair of buttons
+      ctx.fillText('turn', (x0 + w + g / 2) * PX, 0.127 * PX); ctx.fillText('tilt', (x0 + 3 * w + 2.5 * g) * PX, 0.127 * PX); ctx.fillText('zoom', (x0 + 5 * w + 4.5 * g) * PX, 0.127 * PX);
       ctx.textAlign = 'left';
     }, [...row1, ...row2]);
   }

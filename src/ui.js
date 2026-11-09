@@ -88,7 +88,8 @@ export class UIInput {
   update(dt, pointers, onPress) {
     this.cool -= dt;
     const hovers = new Map();
-    const visible = [...this.panels].filter(p => p.mesh.visible && p.mesh.parent && p.buttons.length);
+    // a panel only takes input if it and its parent are shown (the stage hides while VR starts up)
+    const visible = [...this.panels].filter(p => p.mesh.visible && p.mesh.parent && p.mesh.parent.visible && p.buttons.length);
     for (const ptr of pointers.hands()) {
       for (const panel of visible) {
         const t = panel.local(ptr.tip), q = panel.local(ptr.pos);
