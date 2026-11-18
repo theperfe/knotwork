@@ -17,7 +17,7 @@ const fs = require('fs');
   await page.goto('http://127.0.0.1:5173/?emu');
   await page.waitForFunction(() => window.knotwork && window.IWER_DEVICE, null, { timeout: 30000 });
   await page.addStyleTag({ content: `
-    #cap{pointer-events:none;position:fixed;left:0;right:0;bottom:46px;text-align:center;color:#fff;font:600 30px system-ui,Arial;text-shadow:0 2px 16px #000;z-index:2147483646;transition:opacity .3s}
+    #cap{pointer-events:none;position:fixed;left:0;right:0;top:58px;text-align:center;color:#fff;font:600 30px system-ui,Arial;text-shadow:0 2px 16px #000;z-index:2147483646;transition:opacity .3s}
     #cap small{display:block;font-size:19px;font-weight:400;opacity:.75;margin-top:6px}
     #tag{position:fixed;top:18px;left:22px;color:#fff;opacity:.55;font:500 13px system-ui;letter-spacing:2px;text-transform:uppercase;z-index:99}
     #title{pointer-events:none;position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;z-index:2147483647;background:radial-gradient(ellipse at center,rgba(5,6,12,.55),rgba(5,6,12,.95));transition:opacity .4s}
@@ -37,7 +37,7 @@ const fs = require('fs');
     const clock = window.KNOTWORK_CLOCK = { dt: 1 / 72, pending: false };
     const k = window.knotwork, V = k.stage.position.constructor;
     const dispatch = (m, p) => d.remote.dispatch(m, p);
-    await dispatch('set_transform', { device: 'headset', position: { x: 0, y: 1.25, z: 0 }, orientation: { x: -0.1045, y: 0, z: 0, w: 0.9945 } }).catch(() => {});
+    await dispatch('set_transform', { device: 'headset', position: { x: 0, y: 1.25, z: 0 }, orientation: { x: -0.1564, y: 0, z: 0, w: 0.9877 } }).catch(() => {});
     console.log('[demo] setup: before head');
     for (let i = 0; i < 3; i++) await raf();
     const hands = { right: [0.26, 0.86, -0.2], left: [-0.26, 0.86, -0.2] };
@@ -61,7 +61,7 @@ const fs = require('fs');
       },
       async idle(n) { for (let i = 0; i < n; i++) await this.tick(); },
       async poke(panel, label) {
-        const b = panel.buttons.find(b => b.label.includes(label));
+        const b = panel.buttons.find(b => (b.label || b.icon || '').includes(label));
         const lx = b.x + b.w / 2 - panel.w / 2, ly = panel.h / 2 - (b.y + b.h / 2);
         const front = panel.mesh.localToWorld(new V(lx, ly, 0.05)).toArray(), at = panel.mesh.localToWorld(new V(lx, ly, -0.004)).toArray();
         await this.glide({ right: front }, 30, { right: 'index-tip' });
@@ -157,6 +157,15 @@ const fs = require('fs');
       T.cap('Pinch two points and pull<small>Orange glow shows strands pressing on each other</small>');
       const r = await T.solveByMoves(10, 7);
       T.cap(''); await T.idle(130); return r;`,
+    controls: `const T = window.T, k = T.k;
+      k.startPuzzle({ name: 'Figure Loop', strands: 3, conj: 1, index: 2, seed: 1034 });
+      while (k.state === 'tying') await T.tick();
+      T.cap('Turn and tilt the knot<small>Poke the arrows under it: no accidental gestures</small>');
+      await T.poke(k.bar, 'right'); await T.idle(18); await T.poke(k.bar, 'right'); await T.idle(18); await T.poke(k.bar, 'down'); await T.idle(30);
+      T.cap('Zoom in for the tricky crossings<small>Exit VR is always one poke away</small>');
+      await T.poke(k.bar, '+'); await T.idle(12); await T.poke(k.bar, '+'); await T.idle(50);
+      await T.poke(k.bar, '−'); await T.idle(12); await T.poke(k.bar, '−'); await T.idle(30);
+      T.cap(''); return k.state;`,
     trefoil: `const T = window.T, k = T.k;
       k.startPuzzle({ name: 'Hidden Trefoil', strands: 3, conj: 2, knot: 'trefoil', index: 3, seed: 1051 });
       T.cap('Some tangles hide a real knot<small>No amount of pulling can undo it, only simplify it</small>');

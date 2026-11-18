@@ -321,7 +321,7 @@ export class GameSystem extends createSystem({}) {
     this.pointers.update(this.xrFrame);
     for (const [p, a, b] of edges) { p.pressed = p.pressed || a; p.released = p.released || b; }
     if (!this.pointers.xr) this.updateDesktopCamera();
-    this.ui.update(dt, this.pointers, () => this.sound.click());
+    this.ui.update(dt, this.pointers, () => this.sound.click(), this.rope && this.rope.grabs);
     this.handView.update(this.pointers.xr ? this.pointers.hands() : []);
     // hide the SDK's own skinned hand models: we draw our own
     if (xrNow) this.world.player.traverse(o => { if (o.isSkinnedMesh) o.visible = false; });

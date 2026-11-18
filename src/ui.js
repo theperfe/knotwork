@@ -85,12 +85,19 @@ export class Panel {
 export class UIInput {
   constructor() { this.panels = new Set(); this.touch = new Map(); this.cool = 0; }
   add(p) { this.panels.add(p); return p; }
-  update(dt, pointers, onPress) {
+  // busy: ids of hands that are holding the rope; they can't press buttons, so pulling
+  // the rope down past the button bar never re-ties or leaves the puzzle by accident
+  update(dt, pointers, onPress, busy = null) {
     this.cool -= dt;
     const hovers = new Map();
     // a panel only takes input if it and its parent are shown (the stage hides while VR starts up)
     const visible = [...this.panels].filter(p => p.mesh.visible && p.mesh.parent && p.mesh.parent.visible && p.buttons.length);
     for (const ptr of pointers.hands()) {
+      if (busy && busy.has(ptr.id)) {
+        // disarm too, so letting go with a fingertip already on a button doesn't press it
+        for (const panel of visible) { const st = this.touch.get(ptr.id + panel.mesh.uuid); if (st) st.armed = false; }
+        continue;
+      }
       for (const panel of visible) {
         const t = panel.local(ptr.tip), q = panel.local(ptr.pos);
         // poke: index tip within ~1.5 cm of the surface
